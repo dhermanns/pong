@@ -1,0 +1,78 @@
+import swaggerJsdoc from 'swagger-jsdoc';
+
+const options = {
+  definition: {
+    openapi: '3.0.0',
+    info: {
+      title: 'Pong API',
+      version: '1.0.0',
+      description: 'API for a multiplayer Pong game using SSE for real-time updates.',
+    },
+    servers: [
+      {
+        url: 'http://localhost:3000',
+        description: 'Development server',
+      },
+    ],
+    components: {
+      schemas: {
+        JoinResponse: {
+          type: 'object',
+          properties: {
+            matchId: { type: 'string', description: 'Unique identifier for the match' },
+            playerId: { type: 'number', description: 'Player identifier (1 or 2)' },
+          },
+        },
+        MoveRequest: {
+          type: 'object',
+          required: ['playerId', 'direction'],
+          properties: {
+            playerId: { type: 'number', description: 'Player identifier (1 or 2)' },
+            direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to move the paddle' },
+          },
+        },
+        GameState: {
+          type: 'object',
+          properties: {
+            matchId: { type: 'string' },
+            ball: {
+              type: 'object',
+              properties: {
+                x: { type: 'number' },
+                y: { type: 'number' },
+                vx: { type: 'number' },
+                vy: { type: 'number' },
+              },
+            },
+            paddles: {
+              type: 'object',
+              properties: {
+                y1: { type: 'number' },
+                y2: { type: 'number' },
+              },
+            },
+            scores: {
+              type: 'object',
+              properties: {
+                score1: { type: 'number' },
+                score2: { type: 'number' },
+              },
+            },
+            status: {
+              type: 'string',
+              enum: ['waiting', 'playing', 'finished'],
+            },
+            winner: {
+              type: 'number',
+              description: 'The winning player (1 or 2). Only present if status is finished.',
+            },
+          },
+        },
+      },
+    },
+  },
+  apis: ['./app/api/**/*.ts'], // Path to the API docs
+};
+
+export const spec = swaggerJsdoc(options);
+
