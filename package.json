@@ -17,6 +17,7 @@
     "react-dom": "19.2.4",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-react": "^5.32.6",
+    "to-buffer": "^1.2.2",
     "uuid": "^14.0.0"
   },
   "devDependencies": {
