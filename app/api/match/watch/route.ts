@@ -5,23 +5,23 @@ import { NextResponse } from 'next/server';
  * @openapi
  * /api/match/watch:
  *   get:
- *     description: Find a match that can be watched. Running matches are preferred over waiting matches.
+ *     description: List running matches that can be watched.
  *     responses:
  *       200:
- *         description: A watchable match was found.
+ *         description: Running watchable matches were found.
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/WatchResponse'
  *       404:
- *         description: No watchable match exists.
+ *         description: No running watchable match exists.
  */
 export async function GET() {
-  const match = gameManager.getWatchableMatch();
+  const matches = gameManager.getRunningWatchableMatches();
 
-  if (!match) {
+  if (matches.length === 0) {
     return NextResponse.json({ error: 'No match available to watch' }, { status: 404 });
   }
 
-  return NextResponse.json(match);
+  return NextResponse.json({ matches });
 }

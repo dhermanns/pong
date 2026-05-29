@@ -6,7 +6,7 @@ test('watch game shows a message when no match is available', async ({ page }) =
   await expect(page.locator('text=No match is available to watch right now.')).toBeVisible();
 });
 
-test('watch game opens a waiting match without player controls', async ({ browser }) => {
+test('watch game does not list a waiting match', async ({ browser }) => {
   const playerContext = await browser.newContext();
   const playerPage = await playerContext.newPage();
   await playerPage.goto('/');
@@ -14,20 +14,14 @@ test('watch game opens a waiting match without player controls', async ({ browse
   await playerPage.click('text=Join Game');
   await expect(playerPage).toHaveURL(/\/match\//);
   await playerPage.waitForSelector('canvas');
-  const matchUrl = playerPage.url();
-  const matchId = matchUrl.split('/').pop()?.split('?')[0];
 
   const watcherContext = await browser.newContext();
   const watcherPage = await watcherContext.newPage();
   await watcherPage.goto('/');
   await watcherPage.click('text=Watch Game');
-  await expect(watcherPage).toHaveURL(new RegExp(`/match/${matchId}\\?watch=1`));
-  await expect(watcherPage.locator('text=Watching Match')).toBeVisible();
-  await expect(watcherPage.locator('text=Ada:')).toBeVisible();
-  await expect(watcherPage.locator('text=Waiting for Player 2...')).toBeVisible();
-  await expect(watcherPage.locator('canvas')).toBeVisible();
-  await expect(watcherPage.locator('text=Leave Game')).toHaveCount(0);
-  await expect(watcherPage.locator('text=Use Arrow Up/Down or W/S to move your paddle.')).toHaveCount(0);
+  await expect(watcherPage.locator('text=No match is available to watch right now.')).toBeVisible();
+  await expect(watcherPage.locator('text=Ada vs')).toHaveCount(0);
+  await expect(watcherPage).toHaveURL('/');
 
   await playerPage.click('text=Leave Game');
   await expect(playerPage).toHaveURL('/');
@@ -88,6 +82,9 @@ test('multiplayer pong game', async ({ browser }) => {
   const watcherPage = await watcherContext.newPage();
   await watcherPage.goto('/');
   await watcherPage.click('text=Watch Game');
+  await expect(watcherPage.locator('text=Running games')).toBeVisible();
+  await expect(watcherPage.locator('button', { hasText: 'Ada vs Grace' })).toBeVisible();
+  await watcherPage.click('button:has-text("Ada vs Grace")');
   await expect(watcherPage).toHaveURL(new RegExp(`/match/${matchId}\\?watch=1`));
   await expect(watcherPage.locator('text=Watching Match')).toBeVisible();
   await expect(watcherPage.locator('text=Ada:')).toBeVisible();

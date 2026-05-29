@@ -266,20 +266,23 @@ class GameManager {
     return this.matches.get(matchId);
   }
 
-  getWatchableMatch() {
-    for (const [matchId, match] of this.matches.entries()) {
-      if (match.state.status === 'playing' && match.hasClients()) {
-        return { matchId, status: match.state.status };
-      }
-    }
-
-    for (const [matchId, match] of this.matches.entries()) {
-      if (match.state.status === 'waiting' && match.hasClients()) {
-        return { matchId, status: match.state.status };
-      }
-    }
-
-    return null;
+  getRunningWatchableMatches() {
+    return Array.from(this.matches.entries())
+      .filter(([, match]) => (
+        match.state.status === 'playing' &&
+        match.hasClients() &&
+        Boolean(match.state.players.player1) &&
+        Boolean(match.state.players.player2)
+      ))
+      .map(([matchId, match]) => ({
+        matchId,
+        status: match.state.status,
+        players: {
+          player1: match.state.players.player1 as string,
+          player2: match.state.players.player2 as string,
+        },
+        scores: match.state.scores,
+      }));
   }
 
   joinOrCreateMatch(playerName: string) {

@@ -5,12 +5,25 @@ import { FormEvent, useEffect, useState } from 'react';
 
 const PLAYER_NAME_STORAGE_KEY = 'pong.playerName';
 
+type WatchMatch = {
+  matchId: string;
+  players: {
+    player1: string;
+    player2: string;
+  };
+  scores?: {
+    score1: number;
+    score2: number;
+  };
+};
+
 export default function LandingPage() {
   const router = useRouter();
   const [joining, setJoining] = useState(false);
   const [watching, setWatching] = useState(false);
   const [message, setMessage] = useState('');
   const [playerName, setPlayerName] = useState('');
+  const [watchMatches, setWatchMatches] = useState<WatchMatch[]>([]);
 
   useEffect(() => {
     const frameId = window.requestAnimationFrame(() => {
@@ -57,6 +70,7 @@ export default function LandingPage() {
   const watchGame = async () => {
     setWatching(true);
     setMessage('');
+    setWatchMatches([]);
     try {
       const res = await fetch('/api/match/watch');
       if (!res.ok) {
@@ -65,11 +79,15 @@ export default function LandingPage() {
         return;
       }
 
-      const { matchId } = await res.json();
-      router.push(`/match/${matchId}?watch=1`);
+      const { matches } = await res.json();
+      setWatchMatches(Array.isArray(matches) ? matches : []);
+      if (!Array.isArray(matches) || matches.length === 0) {
+        setMessage('No match is available to watch right now.');
+      }
     } catch (error) {
       console.error('Failed to watch game:', error);
       setMessage('Could not open a match to watch. Please try again.');
+    } finally {
       setWatching(false);
     }
   };
@@ -108,8 +126,41 @@ export default function LandingPage() {
         disabled={joining || watching}
         style={{ marginTop: '12px', padding: '10px 20px', fontSize: '18px', cursor: 'pointer' }}
       >
-        {watching ? 'Opening...' : 'Watch Game'}
+        {watching ? 'Loading...' : 'Watch Game'}
       </button>
+      {watchMatches.length > 0 && (
+        <div style={{ marginTop: '16px', width: 'min(420px, calc(100vw - 32px))' }}>
+          <h2 style={{ margin: '0 0 10px', fontSize: '20px', textAlign: 'center' }}>Running games</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {watchMatches.map((match) => (
+              <button
+                key={match.matchId}
+                type="button"
+                onClick={() => router.push(`/match/${match.matchId}?watch=1`)}
+                style={{
+                  padding: '12px 14px',
+                  border: '1px solid #999',
+                  borderRadius: '6px',
+                  background: 'white',
+                  color: '#111',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  textAlign: 'left',
+                }}
+              >
+                <strong style={{ display: 'block', fontSize: '18px' }}>
+                  {match.players.player1} vs {match.players.player2}
+                </strong>
+                {match.scores && (
+                  <span style={{ display: 'block', marginTop: '4px', color: '#555' }}>
+                    {match.scores.score1} : {match.scores.score2}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {message && <p role="status" style={{ marginTop: '16px' }}>{message}</p>}
     </div>
   );

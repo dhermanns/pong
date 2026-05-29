@@ -38,11 +38,34 @@ const options = {
         WatchResponse: {
           type: 'object',
           properties: {
-            matchId: { type: 'string', description: 'Unique identifier for the match' },
-            status: {
-              type: 'string',
-              enum: ['waiting', 'playing'],
-              description: 'Current status of the match selected for watching',
+            matches: {
+              type: 'array',
+              description: 'Running matches available for watching',
+              items: {
+                type: 'object',
+                properties: {
+                  matchId: { type: 'string', description: 'Unique identifier for the match' },
+                  status: {
+                    type: 'string',
+                    enum: ['playing'],
+                    description: 'Current status of the match',
+                  },
+                  players: {
+                    type: 'object',
+                    properties: {
+                      player1: { type: 'string', description: 'Display name for player 1' },
+                      player2: { type: 'string', description: 'Display name for player 2' },
+                    },
+                  },
+                  scores: {
+                    type: 'object',
+                    properties: {
+                      score1: { type: 'number' },
+                      score2: { type: 'number' },
+                    },
+                  },
+                },
+              },
             },
           },
         },
