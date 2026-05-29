@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { GameState } from '@/lib/game';
 
 export function usePongGame(matchId: string) {
@@ -24,21 +24,21 @@ export function usePongGame(matchId: string) {
     };
   }, [matchId]);
 
-  const movePaddle = async (playerId: number, direction: 'up' | 'down') => {
+  const movePaddle = useCallback(async (playerId: number, direction: 'up' | 'down') => {
     await fetch(`/api/match/${matchId}/move`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId, direction }),
     });
-  };
+  }, [matchId]);
 
-  const leaveGame = async (playerId: number) => {
+  const leaveGame = useCallback(async (playerId: number) => {
     await fetch(`/api/match/${matchId}/leave`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playerId }),
     });
-  };
+  }, [matchId]);
 
   return { gameState, movePaddle, leaveGame };
 }

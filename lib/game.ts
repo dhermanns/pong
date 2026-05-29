@@ -5,6 +5,16 @@ export interface GameState {
   ball: { x: number; y: number; vx: number; vy: number };
   paddles: { y1: number; y2: number };
   scores: { score1: number; score2: number };
+  config: {
+    canvasWidth: number;
+    canvasHeight: number;
+    paddleWidth: number;
+    paddleHeight: number;
+    ballSize: number;
+    ballSpeed: number;
+    maxBallSpeed: number;
+    rallyHits: number;
+  };
   status: 'waiting' | 'playing' | 'finished';
   winner?: number;
 }
@@ -14,20 +24,39 @@ const CANVAS_HEIGHT = 400;
 const PADDLE_HEIGHT = 80;
 const PADDLE_WIDTH = 10;
 const BALL_SIZE = 10;
-const PADDLE_SPEED = 10;
-const BALL_SPEED = 5;
+const PADDLE_SPEED = 14;
+const BALL_SPEED = 3.75;
+const MAX_BALL_SPEED = BALL_SPEED * 1.5;
+const MIN_PADDLE_HEIGHT = PADDLE_HEIGHT * 0.7;
+const RALLY_HITS_TO_MAX = 12;
+const FRAME_MS = 1000 / 60;
+const MAX_DELTA_MS = 50;
+const MAX_BOUNCE_ANGLE = Math.PI * 0.36;
+const PADDLE_SPIN_FACTOR = 0.18;
 
 export class GameInstance {
   state: GameState;
   private interval: NodeJS.Timeout | null = null;
   private clients: Set<ReadableStreamDefaultController> = new Set();
+  private lastUpdateAt = Date.now();
+  private lastPaddleMoves: { 1: number; 2: number } = { 1: 0, 2: 0 };
 
   constructor(matchId: string) {
     this.state = {
       matchId,
-      ball: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, vx: BALL_SPEED, vy: BALL_SPEED },
+      ball: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, vx: BALL_SPEED, vy: BALL_SPEED * 0.6 },
       paddles: { y1: CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2, y2: CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2 },
       scores: { score1: 0, score2: 0 },
+      config: {
+        canvasWidth: CANVAS_WIDTH,
+        canvasHeight: CANVAS_HEIGHT,
+        paddleWidth: PADDLE_WIDTH,
+        paddleHeight: PADDLE_HEIGHT,
+        ballSize: BALL_SIZE,
+        ballSpeed: BALL_SPEED,
+        maxBallSpeed: MAX_BALL_SPEED,
+        rallyHits: 0,
+      },
       status: 'waiting',
     };
   }
@@ -47,6 +76,7 @@ export class GameInstance {
   start() {
     if (this.interval) return;
     this.state.status = 'playing';
+    this.lastUpdateAt = Date.now();
     this.interval = setInterval(() => this.update(), 16); // ~60 FPS
   }
 
@@ -67,41 +97,58 @@ export class GameInstance {
 
   movePaddle(playerId: 1 | 2, direction: 'up' | 'down') {
     const key = playerId === 1 ? 'y1' : 'y2';
+    const delta = direction === 'up' ? -PADDLE_SPEED : PADDLE_SPEED;
+    const maxY = CANVAS_HEIGHT - this.state.config.paddleHeight;
+
     if (direction === 'up') {
-      this.state.paddles[key] = Math.max(0, this.state.paddles[key] - PADDLE_SPEED);
+      this.state.paddles[key] = Math.max(0, this.state.paddles[key] + delta);
     } else {
-      this.state.paddles[key] = Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, this.state.paddles[key] + PADDLE_SPEED);
+      this.state.paddles[key] = Math.min(maxY, this.state.paddles[key] + delta);
     }
+    this.lastPaddleMoves[playerId] = delta;
   }
 
   private update() {
     const { ball, paddles } = this.state;
+    const now = Date.now();
+    const deltaMs = Math.min(now - this.lastUpdateAt, MAX_DELTA_MS);
+    this.lastUpdateAt = now;
+    const step = deltaMs / FRAME_MS;
+    const paddleHeight = this.state.config.paddleHeight;
 
     // Move ball
-    ball.x += ball.vx;
-    ball.y += ball.vy;
+    ball.x += ball.vx * step;
+    ball.y += ball.vy * step;
 
     // Wall bounce (top/bottom)
-    if (ball.y <= 0 || ball.y >= CANVAS_HEIGHT - BALL_SIZE) {
-      ball.vy = -ball.vy;
+    if (ball.y <= 0) {
+      ball.y = 0;
+      ball.vy = Math.abs(ball.vy);
+    } else if (ball.y >= CANVAS_HEIGHT - BALL_SIZE) {
+      ball.y = CANVAS_HEIGHT - BALL_SIZE;
+      ball.vy = -Math.abs(ball.vy);
     }
 
     // Paddle collision (left)
     if (
       ball.x <= PADDLE_WIDTH &&
       ball.y + BALL_SIZE >= paddles.y1 &&
-      ball.y <= paddles.y1 + PADDLE_HEIGHT
+      ball.y <= paddles.y1 + paddleHeight &&
+      ball.vx < 0
     ) {
-      ball.vx = Math.abs(ball.vx);
+      ball.x = PADDLE_WIDTH;
+      this.handlePaddleHit(1);
     }
 
     // Paddle collision (right)
     if (
       ball.x >= CANVAS_WIDTH - PADDLE_WIDTH - BALL_SIZE &&
       ball.y + BALL_SIZE >= paddles.y2 &&
-      ball.y <= paddles.y2 + PADDLE_HEIGHT
+      ball.y <= paddles.y2 + paddleHeight &&
+      ball.vx > 0
     ) {
-      ball.vx = -Math.abs(ball.vx);
+      ball.x = CANVAS_WIDTH - PADDLE_WIDTH - BALL_SIZE;
+      this.handlePaddleHit(2);
     }
 
     // Scoring
@@ -125,15 +172,52 @@ export class GameInstance {
     }
 
     this.broadcast();
+    this.lastPaddleMoves[1] *= 0.7;
+    this.lastPaddleMoves[2] *= 0.7;
   }
 
   private resetBall() {
+    this.resetRally();
+    const direction = Math.random() > 0.5 ? 1 : -1;
+    const verticalDirection = Math.random() > 0.5 ? 1 : -1;
     this.state.ball = {
       x: CANVAS_WIDTH / 2,
       y: CANVAS_HEIGHT / 2,
-      vx: (Math.random() > 0.5 ? 1 : -1) * BALL_SPEED,
-      vy: (Math.random() > 0.5 ? 1 : -1) * BALL_SPEED,
+      vx: direction * BALL_SPEED,
+      vy: verticalDirection * BALL_SPEED * 0.6,
     };
+  }
+
+  private handlePaddleHit(playerId: 1 | 2) {
+    const { ball, paddles } = this.state;
+    const paddleY = playerId === 1 ? paddles.y1 : paddles.y2;
+    const paddleCenter = paddleY + this.state.config.paddleHeight / 2;
+    const ballCenter = ball.y + BALL_SIZE / 2;
+    const normalizedHit = Math.max(-1, Math.min(1, (ballCenter - paddleCenter) / (this.state.config.paddleHeight / 2)));
+    const spin = Math.max(-1, Math.min(1, this.lastPaddleMoves[playerId] / PADDLE_SPEED)) * PADDLE_SPIN_FACTOR;
+    const angle = Math.max(-MAX_BOUNCE_ANGLE, Math.min(MAX_BOUNCE_ANGLE, normalizedHit * MAX_BOUNCE_ANGLE + spin));
+
+    this.state.config.rallyHits += 1;
+    this.updateRallyDifficulty();
+
+    const direction = playerId === 1 ? 1 : -1;
+    ball.vx = direction * Math.cos(angle) * this.state.config.ballSpeed;
+    ball.vy = Math.sin(angle) * this.state.config.ballSpeed;
+  }
+
+  private updateRallyDifficulty() {
+    const progress = Math.min(this.state.config.rallyHits / RALLY_HITS_TO_MAX, 1);
+    this.state.config.ballSpeed = BALL_SPEED + (MAX_BALL_SPEED - BALL_SPEED) * progress;
+    this.state.config.paddleHeight = PADDLE_HEIGHT - (PADDLE_HEIGHT - MIN_PADDLE_HEIGHT) * progress;
+    this.state.paddles.y1 = Math.min(this.state.paddles.y1, CANVAS_HEIGHT - this.state.config.paddleHeight);
+    this.state.paddles.y2 = Math.min(this.state.paddles.y2, CANVAS_HEIGHT - this.state.config.paddleHeight);
+  }
+
+  private resetRally() {
+    this.state.config.rallyHits = 0;
+    this.state.config.ballSpeed = BALL_SPEED;
+    this.state.config.paddleHeight = PADDLE_HEIGHT;
+    this.lastPaddleMoves = { 1: 0, 2: 0 };
   }
 
   private broadcast() {
@@ -142,7 +226,7 @@ export class GameInstance {
     this.clients.forEach((controller) => {
       try {
         controller.enqueue(encoder.encode(data));
-      } catch (e) {
+      } catch {
         this.clients.delete(controller);
       }
     });

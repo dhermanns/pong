@@ -58,6 +58,29 @@ const options = {
                 score2: { type: 'number' },
               },
             },
+            config: {
+              type: 'object',
+              description: 'Current playfield and rally metrics for API clients and renderers.',
+              properties: {
+                canvasWidth: { type: 'number' },
+                canvasHeight: { type: 'number' },
+                paddleWidth: { type: 'number' },
+                paddleHeight: {
+                  type: 'number',
+                  description: 'Current paddle height. Starts at 80 and can shrink to 56 during a rally.',
+                },
+                ballSize: { type: 'number' },
+                ballSpeed: {
+                  type: 'number',
+                  description: 'Current rally ball speed. Starts at 3.75 and can rise to 5.625.',
+                },
+                maxBallSpeed: { type: 'number' },
+                rallyHits: {
+                  type: 'number',
+                  description: 'Number of paddle hits in the current rally.',
+                },
+              },
+            },
             status: {
               type: 'string',
               enum: ['waiting', 'playing', 'finished'],
@@ -75,4 +98,3 @@ const options = {
 };
 
 export const spec = swaggerJsdoc(options);
-

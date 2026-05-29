@@ -12,9 +12,19 @@ const CANVAS_HEIGHT = 400;
 const PADDLE_HEIGHT = 80;
 const PADDLE_WIDTH = 10;
 const BALL_SIZE = 10;
+const INTERPOLATION_MS = 45;
 
 export default function PongCanvas({ gameState }: PongCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previousStateRef = useRef<GameState | null>(null);
+  const currentStateRef = useRef<GameState>(gameState);
+  const transitionStartRef = useRef(0);
+
+  useEffect(() => {
+    previousStateRef.current = currentStateRef.current;
+    currentStateRef.current = gameState;
+    transitionStartRef.current = performance.now();
+  }, [gameState]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -22,44 +32,62 @@ export default function PongCanvas({ gameState }: PongCanvasProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear canvas
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    let frameId: number;
 
-    // Draw center line
-    ctx.strokeStyle = 'white';
-    ctx.setLineDash([5, 15]);
-    ctx.beginPath();
-    ctx.moveTo(CANVAS_WIDTH / 2, 0);
-    ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    const lerp = (from: number, to: number, amount: number) => from + (to - from) * amount;
 
-    // Draw paddles
-    ctx.fillStyle = 'white';
-    ctx.fillRect(0, gameState.paddles.y1, PADDLE_WIDTH, PADDLE_HEIGHT);
-    ctx.fillRect(CANVAS_WIDTH - PADDLE_WIDTH, gameState.paddles.y2, PADDLE_WIDTH, PADDLE_HEIGHT);
+    const draw = () => {
+      const current = currentStateRef.current;
+      const previous = previousStateRef.current;
+      const progress = Math.min((performance.now() - transitionStartRef.current) / INTERPOLATION_MS, 1);
+      const width = current.config?.canvasWidth ?? CANVAS_WIDTH;
+      const height = current.config?.canvasHeight ?? CANVAS_HEIGHT;
+      const paddleWidth = current.config?.paddleWidth ?? PADDLE_WIDTH;
+      const paddleHeight = current.config?.paddleHeight ?? PADDLE_HEIGHT;
+      const ballSize = current.config?.ballSize ?? BALL_SIZE;
+      const ballX = previous ? lerp(previous.ball.x, current.ball.x, progress) : current.ball.x;
+      const ballY = previous ? lerp(previous.ball.y, current.ball.y, progress) : current.ball.y;
+      const paddleY1 = previous ? lerp(previous.paddles.y1, current.paddles.y1, progress) : current.paddles.y1;
+      const paddleY2 = previous ? lerp(previous.paddles.y2, current.paddles.y2, progress) : current.paddles.y2;
 
-    // Draw ball
-    ctx.fillRect(gameState.ball.x, gameState.ball.y, BALL_SIZE, BALL_SIZE);
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, width, height);
 
-    // Draw scores
-    ctx.font = '30px Arial';
-    ctx.fillText(gameState.scores.score1.toString(), CANVAS_WIDTH / 4, 50);
-    ctx.fillText(gameState.scores.score2.toString(), (3 * CANVAS_WIDTH) / 4, 50);
+      ctx.strokeStyle = 'white';
+      ctx.setLineDash([5, 15]);
+      ctx.beginPath();
+      ctx.moveTo(width / 2, 0);
+      ctx.lineTo(width / 2, height);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-    if (gameState.status === 'finished') {
-      ctx.fillText(`Player ${gameState.winner} wins!`, CANVAS_WIDTH / 2 - 100, CANVAS_HEIGHT / 2);
-    } else if (gameState.status === 'waiting') {
-      ctx.fillText('Waiting for Player 2...', CANVAS_WIDTH / 2 - 150, CANVAS_HEIGHT / 2);
-    }
-  }, [gameState]);
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, paddleY1, paddleWidth, paddleHeight);
+      ctx.fillRect(width - paddleWidth, paddleY2, paddleWidth, paddleHeight);
+      ctx.fillRect(ballX, ballY, ballSize, ballSize);
+
+      ctx.font = '30px Arial';
+      ctx.fillText(current.scores.score1.toString(), width / 4, 50);
+      ctx.fillText(current.scores.score2.toString(), (3 * width) / 4, 50);
+
+      if (current.status === 'finished') {
+        ctx.fillText(`Player ${current.winner} wins!`, width / 2 - 100, height / 2);
+      } else if (current.status === 'waiting') {
+        ctx.fillText('Waiting for Player 2...', width / 2 - 150, height / 2);
+      }
+
+      frameId = requestAnimationFrame(draw);
+    };
+
+    draw();
+    return () => cancelAnimationFrame(frameId);
+  }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      width={CANVAS_WIDTH}
-      height={CANVAS_HEIGHT}
+      width={gameState.config?.canvasWidth ?? CANVAS_WIDTH}
+      height={gameState.config?.canvasHeight ?? CANVAS_HEIGHT}
       style={{ border: '2px solid white', backgroundColor: 'black' }}
     />
   );
