@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 export interface GameState {
   matchId: string;
+  players: { player1?: string; player2?: string };
   ball: { x: number; y: number; vx: number; vy: number };
   paddles: { y1: number; y2: number };
   scores: { score1: number; score2: number };
@@ -46,9 +47,10 @@ export class GameInstance {
   private lastPaddleMoveAt: { 1: number; 2: number } = { 1: 0, 2: 0 };
   private paddleMoveStreaks: { 1: number; 2: number } = { 1: 0, 2: 0 };
 
-  constructor(matchId: string) {
+  constructor(matchId: string, playerName: string) {
     this.state = {
       matchId,
+      players: { player1: playerName },
       ball: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, vx: BALL_SPEED, vy: BALL_SPEED * 0.6 },
       paddles: { y1: CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2, y2: CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2 },
       scores: { score1: 0, score2: 0 },
@@ -76,6 +78,10 @@ export class GameInstance {
     if (this.clients.size === 0) {
       this.stop();
     }
+  }
+
+  hasClients() {
+    return this.clients.size > 0;
   }
 
   start() {
@@ -259,11 +265,28 @@ class GameManager {
     return this.matches.get(matchId);
   }
 
-  joinOrCreateMatch() {
+  getWatchableMatch() {
+    for (const [matchId, match] of this.matches.entries()) {
+      if (match.state.status === 'playing' && match.hasClients()) {
+        return { matchId, status: match.state.status };
+      }
+    }
+
+    for (const [matchId, match] of this.matches.entries()) {
+      if (match.state.status === 'waiting' && match.hasClients()) {
+        return { matchId, status: match.state.status };
+      }
+    }
+
+    return null;
+  }
+
+  joinOrCreateMatch(playerName: string) {
     // Look for a match with status 'waiting'
     for (const [matchId, match] of this.matches.entries()) {
-      if (match.state.status === 'waiting') {
+      if (match.state.status === 'waiting' && match.hasClients()) {
         const playerId = 2;
+        match.state.players.player2 = playerName;
         match.start();
         return { matchId, playerId };
       }
@@ -271,7 +294,7 @@ class GameManager {
 
     // Create new match
     const matchId = uuidv4();
-    const match = new GameInstance(matchId);
+    const match = new GameInstance(matchId, playerName);
     this.matches.set(matchId, match);
     return { matchId, playerId: 1 as const };
   }

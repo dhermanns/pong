@@ -31,8 +31,11 @@ export async function GET(
     return NextResponse.json({ error: 'Match not found' }, { status: 404 });
   }
 
+  let streamController: ReadableStreamDefaultController | null = null;
+
   const stream = new ReadableStream({
     start(controller) {
+      streamController = controller;
       match.addClient(controller);
       
       req.signal.addEventListener('abort', () => {
@@ -40,7 +43,9 @@ export async function GET(
       });
     },
     cancel() {
-      // Handled by signal abort
+      if (streamController) {
+        match.removeClient(streamController);
+      }
     },
   });
 

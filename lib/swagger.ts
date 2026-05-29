@@ -16,11 +16,34 @@ const options = {
     ],
     components: {
       schemas: {
+        JoinRequest: {
+          type: 'object',
+          required: ['playerName'],
+          properties: {
+            playerName: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 24,
+              description: 'Display name for the joining player',
+            },
+          },
+        },
         JoinResponse: {
           type: 'object',
           properties: {
             matchId: { type: 'string', description: 'Unique identifier for the match' },
             playerId: { type: 'number', description: 'Player identifier (1 or 2)' },
+          },
+        },
+        WatchResponse: {
+          type: 'object',
+          properties: {
+            matchId: { type: 'string', description: 'Unique identifier for the match' },
+            status: {
+              type: 'string',
+              enum: ['waiting', 'playing'],
+              description: 'Current status of the match selected for watching',
+            },
           },
         },
         MoveRequest: {
@@ -35,6 +58,13 @@ const options = {
           type: 'object',
           properties: {
             matchId: { type: 'string' },
+            players: {
+              type: 'object',
+              properties: {
+                player1: { type: 'string', description: 'Display name for player 1' },
+                player2: { type: 'string', description: 'Display name for player 2' },
+              },
+            },
             ball: {
               type: 'object',
               properties: {

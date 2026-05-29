@@ -14,6 +14,12 @@ const PADDLE_WIDTH = 10;
 const BALL_SIZE = 10;
 const INTERPOLATION_MS = 45;
 
+function getPlayerName(gameState: GameState, playerId?: number) {
+  if (playerId === 1) return gameState.players?.player1 ?? 'Player 1';
+  if (playerId === 2) return gameState.players?.player2 ?? 'Player 2';
+  return 'Player';
+}
+
 export default function PongCanvas({ gameState }: PongCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previousStateRef = useRef<GameState | null>(null);
@@ -66,14 +72,19 @@ export default function PongCanvas({ gameState }: PongCanvasProps) {
       ctx.fillRect(width - paddleWidth, paddleY2, paddleWidth, paddleHeight);
       ctx.fillRect(ballX, ballY, ballSize, ballSize);
 
+      ctx.textAlign = 'center';
+      ctx.font = '16px Arial';
+      ctx.fillText(getPlayerName(current, 1), width / 4, 24);
+      ctx.fillText(getPlayerName(current, 2), (3 * width) / 4, 24);
+
       ctx.font = '30px Arial';
-      ctx.fillText(current.scores.score1.toString(), width / 4, 50);
-      ctx.fillText(current.scores.score2.toString(), (3 * width) / 4, 50);
+      ctx.fillText(current.scores.score1.toString(), width / 4, 60);
+      ctx.fillText(current.scores.score2.toString(), (3 * width) / 4, 60);
 
       if (current.status === 'finished') {
-        ctx.fillText(`Player ${current.winner} wins!`, width / 2 - 100, height / 2);
+        ctx.fillText(`${getPlayerName(current, current.winner)} wins!`, width / 2, height / 2);
       } else if (current.status === 'waiting') {
-        ctx.fillText('Waiting for Player 2...', width / 2 - 150, height / 2);
+        ctx.fillText('Waiting for Player 2...', width / 2, height / 2);
       }
 
       frameId = requestAnimationFrame(draw);
