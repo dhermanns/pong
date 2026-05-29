@@ -16,6 +16,23 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## API ansehen
+
+Die API-Dokumentation wird als Swagger UI bereitgestellt. Starte zuerst den
+Entwicklungsserver:
+
+```bash
+npm run dev
+```
+
+Danach kann die API im Browser unter
+[http://localhost:3000/docs](http://localhost:3000/docs) betrachtet werden.
+
+Die zugrunde liegende OpenAPI-Spezifikation ist außerdem als JSON unter
+[http://localhost:3000/api/docs/swagger.json](http://localhost:3000/api/docs/swagger.json)
+verfügbar. Dort sind die Endpunkte zum Beitreten, Verlassen, Bewegen und zum
+SSE-Stream eines Matches dokumentiert.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
