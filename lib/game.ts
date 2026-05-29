@@ -33,6 +33,9 @@ const FRAME_MS = 1000 / 60;
 const MAX_DELTA_MS = 50;
 const MAX_BOUNCE_ANGLE = Math.PI * 0.36;
 const PADDLE_SPIN_FACTOR = 0.18;
+const PADDLE_ACCELERATION_WINDOW_MS = 180;
+const PADDLE_ACCELERATION_STEP = 0.25;
+const MAX_PADDLE_ACCELERATION = 2;
 
 export class GameInstance {
   state: GameState;
@@ -40,6 +43,8 @@ export class GameInstance {
   private clients: Set<ReadableStreamDefaultController> = new Set();
   private lastUpdateAt = Date.now();
   private lastPaddleMoves: { 1: number; 2: number } = { 1: 0, 2: 0 };
+  private lastPaddleMoveAt: { 1: number; 2: number } = { 1: 0, 2: 0 };
+  private paddleMoveStreaks: { 1: number; 2: number } = { 1: 0, 2: 0 };
 
   constructor(matchId: string) {
     this.state = {
@@ -97,7 +102,18 @@ export class GameInstance {
 
   movePaddle(playerId: 1 | 2, direction: 'up' | 'down') {
     const key = playerId === 1 ? 'y1' : 'y2';
-    const delta = direction === 'up' ? -PADDLE_SPEED : PADDLE_SPEED;
+    const now = Date.now();
+    const timeSinceLastMove = now - this.lastPaddleMoveAt[playerId];
+    const isAccelerating = timeSinceLastMove <= PADDLE_ACCELERATION_WINDOW_MS;
+    this.paddleMoveStreaks[playerId] = isAccelerating ? this.paddleMoveStreaks[playerId] + 1 : 0;
+    this.lastPaddleMoveAt[playerId] = now;
+
+    const acceleration = Math.min(
+      MAX_PADDLE_ACCELERATION,
+      1 + this.paddleMoveStreaks[playerId] * PADDLE_ACCELERATION_STEP
+    );
+    const distance = PADDLE_SPEED * acceleration;
+    const delta = direction === 'up' ? -distance : distance;
     const maxY = CANVAS_HEIGHT - this.state.config.paddleHeight;
 
     if (direction === 'up') {
@@ -218,6 +234,8 @@ export class GameInstance {
     this.state.config.ballSpeed = BALL_SPEED;
     this.state.config.paddleHeight = PADDLE_HEIGHT;
     this.lastPaddleMoves = { 1: 0, 2: 0 };
+    this.lastPaddleMoveAt = { 1: 0, 2: 0 };
+    this.paddleMoveStreaks = { 1: 0, 2: 0 };
   }
 
   private broadcast() {
