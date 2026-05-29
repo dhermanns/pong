@@ -102,9 +102,12 @@ const options = {
                 ballSize: { type: 'number' },
                 ballSpeed: {
                   type: 'number',
-                  description: 'Current rally ball speed. Starts at 3.75 and can rise to 5.625.',
+                  description: 'Current rally ball speed. Starts at 3.75 and increases by 10% after each paddle hit.',
                 },
-                maxBallSpeed: { type: 'number' },
+                maxBallSpeed: {
+                  type: 'number',
+                  description: 'Reference speed reached after 12 rally hits.',
+                },
                 rallyHits: {
                   type: 'number',
                   description: 'Number of paddle hits in the current rally.',

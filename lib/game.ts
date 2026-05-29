@@ -27,9 +27,10 @@ const PADDLE_WIDTH = 10;
 const BALL_SIZE = 10;
 const PADDLE_SPEED = 14;
 const BALL_SPEED = 3.75;
-const MAX_BALL_SPEED = BALL_SPEED * 1.5;
+const BALL_SPEED_INCREASE_PER_HIT = 1.1;
 const MIN_PADDLE_HEIGHT = PADDLE_HEIGHT * 0.7;
 const RALLY_HITS_TO_MAX = 12;
+const RALLY_SPEED_REFERENCE = BALL_SPEED * BALL_SPEED_INCREASE_PER_HIT ** RALLY_HITS_TO_MAX;
 const FRAME_MS = 1000 / 60;
 const MAX_DELTA_MS = 50;
 const MAX_BOUNCE_ANGLE = Math.PI * 0.36;
@@ -61,7 +62,7 @@ export class GameInstance {
         paddleHeight: PADDLE_HEIGHT,
         ballSize: BALL_SIZE,
         ballSpeed: BALL_SPEED,
-        maxBallSpeed: MAX_BALL_SPEED,
+        maxBallSpeed: RALLY_SPEED_REFERENCE,
         rallyHits: 0,
       },
       status: 'waiting',
@@ -229,7 +230,7 @@ export class GameInstance {
 
   private updateRallyDifficulty() {
     const progress = Math.min(this.state.config.rallyHits / RALLY_HITS_TO_MAX, 1);
-    this.state.config.ballSpeed = BALL_SPEED + (MAX_BALL_SPEED - BALL_SPEED) * progress;
+    this.state.config.ballSpeed = BALL_SPEED * BALL_SPEED_INCREASE_PER_HIT ** this.state.config.rallyHits;
     this.state.config.paddleHeight = PADDLE_HEIGHT - (PADDLE_HEIGHT - MIN_PADDLE_HEIGHT) * progress;
     this.state.paddles.y1 = Math.min(this.state.paddles.y1, CANVAS_HEIGHT - this.state.config.paddleHeight);
     this.state.paddles.y2 = Math.min(this.state.paddles.y2, CANVAS_HEIGHT - this.state.config.paddleHeight);
