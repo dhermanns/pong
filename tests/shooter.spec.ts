@@ -59,6 +59,19 @@ test('engine lobbies support up to 8 players', async () => {
   expect(() => match.addPlayer('P8')).toThrow('Lobby is full or already started');
 });
 
+test('engine kicks lobby players that do not ready within the timeout', async () => {
+  const match = new GameInstance('ready-timeout-test', 'Ada', { lobbyReadyTimeoutMs: 20 });
+  const ada = match.state.players[0];
+  const grace = match.addPlayer('Grace');
+
+  expect(match.setReady(grace.id, true).ok).toBeTruthy();
+
+  await expect.poll(() => match.state.players.some((player) => player.id === ada.id)).toBeFalsy();
+  expect(match.state.players).toEqual([
+    expect.objectContaining({ id: grace.id, ready: true }),
+  ]);
+});
+
 test('swagger documents the shooter API', async ({ request }) => {
   const response = await request.get('/api/docs/swagger.json');
   expect(response.ok()).toBeTruthy();

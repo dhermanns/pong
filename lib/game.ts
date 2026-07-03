@@ -45,6 +45,7 @@ export interface GameState {
     projectileTtlMs: number;
     winningHits: number;
     tickRate: number;
+    lobbyReadyTimeoutMs: number;
   };
 }
 
@@ -63,6 +64,7 @@ const WINNING_HITS = 10;
 const TICK_RATE = 60;
 const FRAME_MS = 1000 / TICK_RATE;
 const MAX_DELTA_MS = 50;
+const LOBBY_READY_TIMEOUT_MS = 10_000;
 
 const config = {
   width: ARENA_WIDTH,
@@ -78,12 +80,17 @@ const config = {
   projectileTtlMs: PROJECTILE_TTL_MS,
   winningHits: WINNING_HITS,
   tickRate: TICK_RATE,
+  lobbyReadyTimeoutMs: LOBBY_READY_TIMEOUT_MS,
 };
 
 type MovementInput = {
   dx: number;
   dy: number;
   angle?: number;
+};
+
+type GameInstanceOptions = {
+  lobbyReadyTimeoutMs?: number;
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -123,15 +130,22 @@ export class GameInstance {
   private clients: Set<ReadableStreamDefaultController> = new Set();
   private lastUpdateAt = Date.now();
   private movements: Map<string, { dx: number; dy: number }> = new Map();
+  private readyTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private lobbyReadyTimeoutMs: number;
 
-  constructor(matchId: string, playerName: string) {
+  constructor(matchId: string, playerName: string, options: GameInstanceOptions = {}) {
+    this.lobbyReadyTimeoutMs = options.lobbyReadyTimeoutMs ?? LOBBY_READY_TIMEOUT_MS;
     this.state = {
       matchId,
       status: 'lobby',
       players: [this.createPlayer(playerName)],
       projectiles: [],
-      config,
+      config: {
+        ...config,
+        lobbyReadyTimeoutMs: this.lobbyReadyTimeoutMs,
+      },
     };
+    this.scheduleReadyTimeout(this.state.players[0].id);
   }
 
   addClient(controller: ReadableStreamDefaultController) {
@@ -161,6 +175,7 @@ export class GameInstance {
 
     const player = this.createPlayer(playerName);
     this.state.players.push(player);
+    this.scheduleReadyTimeout(player.id);
     this.broadcast();
     return player;
   }
@@ -171,6 +186,11 @@ export class GameInstance {
     if (this.state.status !== 'lobby') return { ok: false, error: 'Game is not in lobby', status: 409 };
 
     player.ready = ready;
+    if (ready) {
+      this.clearReadyTimeout(playerId);
+    } else {
+      this.scheduleReadyTimeout(playerId);
+    }
     this.startIfReady();
     this.broadcast();
     return { ok: true };
@@ -225,6 +245,7 @@ export class GameInstance {
     const player = this.getPlayer(playerId);
     if (!player) return { ok: false, error: 'Player not found', status: 404 };
 
+    this.clearReadyTimeout(playerId);
     this.movements.delete(playerId);
     this.state.projectiles = this.state.projectiles.filter((projectile) => projectile.ownerId !== playerId);
 
@@ -276,9 +297,40 @@ export class GameInstance {
 
   private start() {
     if (this.interval) return;
+    this.clearAllReadyTimeouts();
     this.state.status = 'playing';
     this.lastUpdateAt = Date.now();
     this.interval = setInterval(() => this.update(), FRAME_MS);
+  }
+
+  private scheduleReadyTimeout(playerId: string) {
+    this.clearReadyTimeout(playerId);
+    if (this.state.status !== 'lobby') return;
+
+    const timeout = setTimeout(() => this.kickUnreadyPlayer(playerId), this.lobbyReadyTimeoutMs);
+    timeout.unref?.();
+    this.readyTimeouts.set(playerId, timeout);
+  }
+
+  private clearReadyTimeout(playerId: string) {
+    const timeout = this.readyTimeouts.get(playerId);
+    if (!timeout) return;
+
+    clearTimeout(timeout);
+    this.readyTimeouts.delete(playerId);
+  }
+
+  private clearAllReadyTimeouts() {
+    for (const playerId of this.readyTimeouts.keys()) {
+      this.clearReadyTimeout(playerId);
+    }
+  }
+
+  private kickUnreadyPlayer(playerId: string) {
+    const player = this.getPlayer(playerId);
+    if (!player || player.ready || this.state.status !== 'lobby') return;
+
+    this.leave(playerId);
   }
 
   private stop() {

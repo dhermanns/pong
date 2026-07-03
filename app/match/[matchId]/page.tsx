@@ -22,6 +22,8 @@ export default function MatchRoom() {
     if (isWatching || !playerId) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (gameState && !gameState.players.some((candidate) => candidate.id === playerId)) return;
+
       const movement = {
         dx: Number(event.key === 'ArrowRight' || event.key === 'd') - Number(event.key === 'ArrowLeft' || event.key === 'a'),
         dy: Number(event.key === 'ArrowDown' || event.key === 's') - Number(event.key === 'ArrowUp' || event.key === 'w'),
@@ -36,6 +38,8 @@ export default function MatchRoom() {
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
+      if (gameState && !gameState.players.some((candidate) => candidate.id === playerId)) return;
+
       if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'w', 'a', 's', 'd'].includes(event.key)) {
         movePlayer(playerId, 0, 0);
       }
@@ -47,7 +51,7 @@ export default function MatchRoom() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [gameState?.players, isWatching, movePlayer, playerId, shoot]);
+  }, [gameState, isWatching, movePlayer, playerId, shoot]);
 
   const handleLeave = async () => {
     if (!playerId) return;
@@ -62,11 +66,12 @@ export default function MatchRoom() {
 
   const winnerName = gameState?.winnerId ? getPlayerName(gameState, gameState.winnerId) : null;
   const currentPlayer = gameState?.players.find((player) => player.id === playerId);
+  const currentPlayerWasKicked = !isWatching && Boolean(gameState) && !currentPlayer;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif', padding: '24px' }}>
       <h1>Match: {matchId}</h1>
-      <h3>{isWatching ? 'Watching Match' : `You are ${currentPlayer?.name ?? 'joining...'}`}</h3>
+      <h3>{isWatching ? 'Watching Match' : currentPlayerWasKicked ? 'You were removed from the lobby' : `You are ${currentPlayer?.name ?? 'joining...'}`}</h3>
       {gameState ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '12px', marginBottom: '10px', fontSize: '16px' }}>
@@ -82,7 +87,7 @@ export default function MatchRoom() {
             {gameState.status === 'finished' && `${winnerName} wins!`}
           </div>
           <ShooterCanvas gameState={gameState} />
-          {!isWatching && gameState.status === 'lobby' && !currentPlayer?.ready && (
+          {!isWatching && currentPlayer && gameState.status === 'lobby' && !currentPlayer.ready && (
             <button
               onClick={handleReady}
               style={{ marginTop: '20px', padding: '10px 20px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
@@ -90,7 +95,7 @@ export default function MatchRoom() {
               Ready
             </button>
           )}
-          {!isWatching && gameState.status !== 'finished' && (
+          {!isWatching && currentPlayer && gameState.status !== 'finished' && (
             <button
               onClick={handleLeave}
               style={{ marginTop: '12px', padding: '10px 20px', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
@@ -98,7 +103,7 @@ export default function MatchRoom() {
               Leave Game
             </button>
           )}
-          {(isWatching || gameState.status === 'finished') && (
+          {(isWatching || currentPlayerWasKicked || gameState.status === 'finished') && (
             <button
               onClick={() => router.push('/')}
               style={{ marginTop: '20px', padding: '10px 20px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}

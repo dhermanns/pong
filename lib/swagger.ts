@@ -158,6 +158,7 @@ const options = {
                 projectileTtlMs: { type: 'number' },
                 winningHits: { type: 'number' },
                 tickRate: { type: 'number' },
+                lobbyReadyTimeoutMs: { type: 'number' },
               },
             },
           },
