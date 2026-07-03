@@ -3,18 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
 
-const PLAYER_NAME_STORAGE_KEY = 'pong.playerName';
+const PLAYER_NAME_STORAGE_KEY = 'shooter.playerName';
 
 type WatchMatch = {
   matchId: string;
   players: {
-    player1: string;
-    player2: string;
-  };
-  scores?: {
-    score1: number;
-    score2: number;
-  };
+    id: string;
+    name: string;
+    hits: number;
+  }[];
 };
 
 export default function LandingPage() {
@@ -96,7 +93,7 @@ export default function LandingPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'sans-serif' }}>
-      <h1>Pong Multiplayer</h1>
+      <h1>Top-Down Shooter API Debug</h1>
       <form onSubmit={joinGame} style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: 'min(320px, calc(100vw - 32px))' }}>
         <label htmlFor="playerName" style={{ fontSize: '16px', fontWeight: 600 }}>
           Player name
@@ -149,13 +146,11 @@ export default function LandingPage() {
                 }}
               >
                 <strong style={{ display: 'block', fontSize: '18px' }}>
-                  {match.players.player1} vs {match.players.player2}
+                  {match.players.map((player) => player.name).join(' vs ')}
                 </strong>
-                {match.scores && (
-                  <span style={{ display: 'block', marginTop: '4px', color: '#555' }}>
-                    {match.scores.score1} : {match.scores.score2}
-                  </span>
-                )}
+                <span style={{ display: 'block', marginTop: '4px', color: '#555' }}>
+                  {match.players.map((player) => `${player.name}: ${player.hits}`).join(' | ')}
+                </span>
               </button>
             ))}
           </div>

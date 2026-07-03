@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { GameState } from '@/lib/game';
 
-export function usePongGame(matchId: string) {
+export function useShooterGame(matchId: string) {
   const [gameState, setGameState] = useState<GameState | null>(null);
 
   useEffect(() => {
@@ -24,15 +24,31 @@ export function usePongGame(matchId: string) {
     };
   }, [matchId]);
 
-  const movePaddle = useCallback(async (playerId: number, direction: 'up' | 'down') => {
-    await fetch(`/api/match/${matchId}/move`, {
+  const setReady = useCallback(async (playerId: string, ready = true) => {
+    await fetch(`/api/match/${matchId}/ready`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId, direction }),
+      body: JSON.stringify({ playerId, ready }),
     });
   }, [matchId]);
 
-  const leaveGame = useCallback(async (playerId: number) => {
+  const movePlayer = useCallback(async (playerId: string, dx: number, dy: number, angle?: number) => {
+    await fetch(`/api/match/${matchId}/move`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId, dx, dy, angle }),
+    });
+  }, [matchId]);
+
+  const shoot = useCallback(async (playerId: string, angle?: number) => {
+    await fetch(`/api/match/${matchId}/shoot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playerId, angle }),
+    });
+  }, [matchId]);
+
+  const leaveGame = useCallback(async (playerId: string) => {
     await fetch(`/api/match/${matchId}/leave`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -40,5 +56,5 @@ export function usePongGame(matchId: string) {
     });
   }, [matchId]);
 
-  return { gameState, movePaddle, leaveGame };
+  return { gameState, setReady, movePlayer, shoot, leaveGame };
 }

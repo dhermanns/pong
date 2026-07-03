@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
  * @openapi
  * /api/match/{matchId}/leave:
  *   post:
- *     description: Leave the match, forfeiting the game to the opponent.
+ *     description: Leave the lobby or current match.
  *     parameters:
  *       - in: path
  *         name: matchId
@@ -21,8 +21,8 @@ import { NextRequest, NextResponse } from 'next/server';
  *             required: [playerId]
  *             properties:
  *               playerId:
- *                 type: number
- *                 description: Player identifier (1 or 2)
+ *                 type: string
+ *                 description: Player identifier returned by join.
  *     responses:
  *       200:
  *         description: Left the game successfully.
@@ -34,14 +34,23 @@ export async function POST(
   { params }: { params: Promise<{ matchId: string }> }
 ) {
   const { matchId } = await params;
-  const { playerId } = await req.json();
+  const body = await req.json().catch(() => null);
+  const playerId = typeof body?.playerId === 'string' ? body.playerId : '';
+
+  if (!playerId) {
+    return NextResponse.json({ error: 'Player id is required' }, { status: 400 });
+  }
 
   const match = gameManager.getMatch(matchId);
   if (!match) {
     return NextResponse.json({ error: 'Match not found' }, { status: 404 });
   }
 
-  match.leave(playerId as 1 | 2);
+  const result = match.leave(playerId);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status });
+  }
+
   return NextResponse.json({ success: true });
 }
 

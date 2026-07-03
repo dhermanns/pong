@@ -1,12 +1,28 @@
 import swaggerJsdoc from 'swagger-jsdoc';
 
+const playerSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: 'Stable player identifier returned by join.' },
+    name: { type: 'string' },
+    x: { type: 'number' },
+    y: { type: 'number' },
+    angle: { type: 'number', description: 'Facing angle in radians.' },
+    ready: { type: 'boolean' },
+    hits: { type: 'number' },
+    alive: { type: 'boolean' },
+    lastShotAt: { type: 'number' },
+    respawnedAt: { type: 'number' },
+  },
+};
+
 const options = {
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Pong API',
+      title: 'Top-Down Shooter API',
       version: '1.0.0',
-      description: 'API for a multiplayer Pong game using SSE for real-time updates.',
+      description: 'REST API for a Brawl-Stars-style top-down shooter backend using SSE for real-time state updates.',
     },
     servers: [
       {
@@ -24,15 +40,45 @@ const options = {
               type: 'string',
               minLength: 1,
               maxLength: 24,
-              description: 'Display name for the joining player',
+              description: 'Display name for the joining player.',
             },
           },
         },
         JoinResponse: {
           type: 'object',
           properties: {
-            matchId: { type: 'string', description: 'Unique identifier for the match' },
-            playerId: { type: 'number', description: 'Player identifier (1 or 2)' },
+            matchId: { type: 'string', description: 'Unique identifier for the lobby or match.' },
+            playerId: { type: 'string', description: 'Stable player identifier for subsequent actions.' },
+          },
+        },
+        ReadyRequest: {
+          type: 'object',
+          required: ['playerId'],
+          properties: {
+            playerId: { type: 'string' },
+            ready: {
+              type: 'boolean',
+              default: true,
+              description: 'Whether the player is ready. Defaults to true if omitted.',
+            },
+          },
+        },
+        MoveRequest: {
+          type: 'object',
+          required: ['playerId'],
+          properties: {
+            playerId: { type: 'string' },
+            dx: { type: 'number', description: 'Horizontal movement input from -1 to 1.' },
+            dy: { type: 'number', description: 'Vertical movement input from -1 to 1.' },
+            angle: { type: 'number', description: 'Optional facing angle in radians.' },
+          },
+        },
+        ShootRequest: {
+          type: 'object',
+          required: ['playerId'],
+          properties: {
+            playerId: { type: 'string' },
+            angle: { type: 'number', description: 'Optional shot angle in radians. Defaults to current player angle.' },
           },
         },
         WatchResponse: {
@@ -40,117 +86,86 @@ const options = {
           properties: {
             matches: {
               type: 'array',
-              description: 'Running matches available for watching',
+              description: 'Running matches available for watching.',
               items: {
                 type: 'object',
                 properties: {
-                  matchId: { type: 'string', description: 'Unique identifier for the match' },
-                  status: {
-                    type: 'string',
-                    enum: ['playing'],
-                    description: 'Current status of the match',
-                  },
+                  matchId: { type: 'string' },
+                  status: { type: 'string', enum: ['playing'] },
+                  winnerId: { type: 'string' },
                   players: {
-                    type: 'object',
-                    properties: {
-                      player1: { type: 'string', description: 'Display name for player 1' },
-                      player2: { type: 'string', description: 'Display name for player 2' },
-                    },
-                  },
-                  scores: {
-                    type: 'object',
-                    properties: {
-                      score1: { type: 'number' },
-                      score2: { type: 'number' },
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'string' },
+                        name: { type: 'string' },
+                        hits: { type: 'number' },
+                        ready: { type: 'boolean' },
+                        alive: { type: 'boolean' },
+                      },
                     },
                   },
                 },
               },
             },
-          },
-        },
-        MoveRequest: {
-          type: 'object',
-          required: ['playerId', 'direction'],
-          properties: {
-            playerId: { type: 'number', description: 'Player identifier (1 or 2)' },
-            direction: { type: 'string', enum: ['up', 'down'], description: 'Direction to move the paddle' },
           },
         },
         GameState: {
           type: 'object',
           properties: {
             matchId: { type: 'string' },
+            status: {
+              type: 'string',
+              enum: ['lobby', 'playing', 'finished'],
+            },
             players: {
-              type: 'object',
-              properties: {
-                player1: { type: 'string', description: 'Display name for player 1' },
-                player2: { type: 'string', description: 'Display name for player 2' },
+              type: 'array',
+              items: playerSchema,
+            },
+            projectiles: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  ownerId: { type: 'string' },
+                  x: { type: 'number' },
+                  y: { type: 'number' },
+                  vx: { type: 'number' },
+                  vy: { type: 'number' },
+                  createdAt: { type: 'number' },
+                },
               },
             },
-            ball: {
-              type: 'object',
-              properties: {
-                x: { type: 'number' },
-                y: { type: 'number' },
-                vx: { type: 'number' },
-                vy: { type: 'number' },
-              },
-            },
-            paddles: {
-              type: 'object',
-              properties: {
-                y1: { type: 'number' },
-                y2: { type: 'number' },
-              },
-            },
-            scores: {
-              type: 'object',
-              properties: {
-                score1: { type: 'number' },
-                score2: { type: 'number' },
-              },
+            winnerId: {
+              type: 'string',
+              description: 'Winning player id. Only present if status is finished.',
             },
             config: {
               type: 'object',
-              description: 'Current playfield and rally metrics for API clients and renderers.',
               properties: {
-                canvasWidth: { type: 'number' },
-                canvasHeight: { type: 'number' },
-                paddleWidth: { type: 'number' },
-                paddleHeight: {
-                  type: 'number',
-                  description: 'Current paddle height. Starts at 80 and can shrink to 56 during a rally.',
-                },
-                ballSize: { type: 'number' },
-                ballSpeed: {
-                  type: 'number',
-                  description: 'Current rally ball speed. Starts at 3.75 and increases by 10% after each paddle hit.',
-                },
-                maxBallSpeed: {
-                  type: 'number',
-                  description: 'Reference speed reached after 12 rally hits.',
-                },
-                rallyHits: {
-                  type: 'number',
-                  description: 'Number of paddle hits in the current rally.',
-                },
+                width: { type: 'number' },
+                height: { type: 'number' },
+                barrierSize: { type: 'number' },
+                minPlayers: { type: 'number' },
+                maxPlayers: { type: 'number' },
+                playerRadius: { type: 'number' },
+                projectileRadius: { type: 'number' },
+                playerSpeed: { type: 'number' },
+                projectileSpeed: { type: 'number' },
+                shotCooldownMs: { type: 'number' },
+                projectileTtlMs: { type: 'number' },
+                winningHits: { type: 'number' },
+                tickRate: { type: 'number' },
               },
-            },
-            status: {
-              type: 'string',
-              enum: ['waiting', 'playing', 'finished'],
-            },
-            winner: {
-              type: 'number',
-              description: 'The winning player (1 or 2). Only present if status is finished.',
             },
           },
         },
       },
     },
   },
-  apis: ['./app/api/**/*.ts'], // Path to the API docs
+  apis: ['./app/api/**/*.ts'],
 };
 
 export const spec = swaggerJsdoc(options);

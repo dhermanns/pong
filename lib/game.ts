@@ -1,71 +1,136 @@
 import { v4 as uuidv4 } from 'uuid';
 
-export interface GameState {
-  matchId: string;
-  players: { player1?: string; player2?: string };
-  ball: { x: number; y: number; vx: number; vy: number };
-  paddles: { y1: number; y2: number };
-  scores: { score1: number; score2: number };
-  config: {
-    canvasWidth: number;
-    canvasHeight: number;
-    paddleWidth: number;
-    paddleHeight: number;
-    ballSize: number;
-    ballSpeed: number;
-    maxBallSpeed: number;
-    rallyHits: number;
-  };
-  status: 'waiting' | 'playing' | 'finished';
-  winner?: number;
+export type GameStatus = 'lobby' | 'playing' | 'finished';
+
+export interface PlayerState {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  angle: number;
+  ready: boolean;
+  hits: number;
+  alive: boolean;
+  lastShotAt: number;
+  respawnedAt: number;
 }
 
-const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 400;
-const PADDLE_HEIGHT = 80;
-const PADDLE_WIDTH = 10;
-const BALL_SIZE = 10;
-const PADDLE_SPEED = 14;
-const BALL_SPEED = 3.75;
-const BALL_SPEED_INCREASE_PER_HIT = 1.1;
-const MIN_PADDLE_HEIGHT = PADDLE_HEIGHT * 0.7;
-const RALLY_HITS_TO_MAX = 12;
-const RALLY_SPEED_REFERENCE = BALL_SPEED * BALL_SPEED_INCREASE_PER_HIT ** RALLY_HITS_TO_MAX;
-const FRAME_MS = 1000 / 60;
+export interface ProjectileState {
+  id: string;
+  ownerId: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  createdAt: number;
+}
+
+export interface GameState {
+  matchId: string;
+  status: GameStatus;
+  players: PlayerState[];
+  projectiles: ProjectileState[];
+  winnerId?: string;
+  config: {
+    width: number;
+    height: number;
+    barrierSize: number;
+    minPlayers: number;
+    maxPlayers: number;
+    playerRadius: number;
+    projectileRadius: number;
+    playerSpeed: number;
+    projectileSpeed: number;
+    shotCooldownMs: number;
+    projectileTtlMs: number;
+    winningHits: number;
+    tickRate: number;
+  };
+}
+
+const ARENA_WIDTH = 1200;
+const ARENA_HEIGHT = 800;
+const BARRIER_SIZE = 24;
+const MIN_PLAYERS = 2;
+const MAX_PLAYERS = 8;
+const PLAYER_RADIUS = 18;
+const PROJECTILE_RADIUS = 5;
+const PLAYER_SPEED = 260;
+const PROJECTILE_SPEED = 620;
+const SHOT_COOLDOWN_MS = 300;
+const PROJECTILE_TTL_MS = 1600;
+const WINNING_HITS = 10;
+const TICK_RATE = 60;
+const FRAME_MS = 1000 / TICK_RATE;
 const MAX_DELTA_MS = 50;
-const MAX_BOUNCE_ANGLE = Math.PI * 0.36;
-const PADDLE_SPIN_FACTOR = 0.18;
-const PADDLE_ACCELERATION_WINDOW_MS = 180;
-const PADDLE_ACCELERATION_STEP = 0.25;
-const MAX_PADDLE_ACCELERATION = 2;
+
+const config = {
+  width: ARENA_WIDTH,
+  height: ARENA_HEIGHT,
+  barrierSize: BARRIER_SIZE,
+  minPlayers: MIN_PLAYERS,
+  maxPlayers: MAX_PLAYERS,
+  playerRadius: PLAYER_RADIUS,
+  projectileRadius: PROJECTILE_RADIUS,
+  playerSpeed: PLAYER_SPEED,
+  projectileSpeed: PROJECTILE_SPEED,
+  shotCooldownMs: SHOT_COOLDOWN_MS,
+  projectileTtlMs: PROJECTILE_TTL_MS,
+  winningHits: WINNING_HITS,
+  tickRate: TICK_RATE,
+};
+
+type MovementInput = {
+  dx: number;
+  dy: number;
+  angle?: number;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function distanceSquared(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+}
+
+function normalizeAngle(angle: number) {
+  const twoPi = Math.PI * 2;
+  return ((angle % twoPi) + twoPi) % twoPi;
+}
+
+function sanitizeUnitVector(dx: unknown, dy: unknown) {
+  const parsedDx = typeof dx === 'number' && Number.isFinite(dx) ? dx : 0;
+  const parsedDy = typeof dy === 'number' && Number.isFinite(dy) ? dy : 0;
+  const length = Math.hypot(parsedDx, parsedDy);
+
+  if (length === 0) {
+    return { dx: 0, dy: 0 };
+  }
+
+  if (length <= 1) {
+    return { dx: parsedDx, dy: parsedDy };
+  }
+
+  return { dx: parsedDx / length, dy: parsedDy / length };
+}
 
 export class GameInstance {
   state: GameState;
   private interval: NodeJS.Timeout | null = null;
   private clients: Set<ReadableStreamDefaultController> = new Set();
   private lastUpdateAt = Date.now();
-  private lastPaddleMoves: { 1: number; 2: number } = { 1: 0, 2: 0 };
-  private lastPaddleMoveAt: { 1: number; 2: number } = { 1: 0, 2: 0 };
-  private paddleMoveStreaks: { 1: number; 2: number } = { 1: 0, 2: 0 };
+  private movements: Map<string, { dx: number; dy: number }> = new Map();
 
   constructor(matchId: string, playerName: string) {
     this.state = {
       matchId,
-      players: { player1: playerName },
-      ball: { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2, vx: BALL_SPEED, vy: BALL_SPEED * 0.6 },
-      paddles: { y1: CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2, y2: CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2 },
-      scores: { score1: 0, score2: 0 },
-      config: {
-        canvasWidth: CANVAS_WIDTH,
-        canvasHeight: CANVAS_HEIGHT,
-        paddleWidth: PADDLE_WIDTH,
-        paddleHeight: PADDLE_HEIGHT,
-        ballSize: BALL_SIZE,
-        ballSpeed: BALL_SPEED,
-        maxBallSpeed: RALLY_SPEED_REFERENCE,
-        rallyHits: 0,
-      },
-      status: 'waiting',
+      status: 'lobby',
+      players: [this.createPlayer(playerName)],
+      projectiles: [],
+      config,
     };
   }
 
@@ -76,7 +141,7 @@ export class GameInstance {
 
   removeClient(controller: ReadableStreamDefaultController) {
     this.clients.delete(controller);
-    if (this.clients.size === 0) {
+    if (this.clients.size === 0 && this.state.status !== 'playing') {
       this.stop();
     }
   }
@@ -85,164 +150,269 @@ export class GameInstance {
     return this.clients.size > 0;
   }
 
-  start() {
+  canJoin() {
+    return this.state.status === 'lobby' && this.state.players.length < MAX_PLAYERS;
+  }
+
+  addPlayer(playerName: string) {
+    if (!this.canJoin()) {
+      throw new Error('Lobby is full or already started');
+    }
+
+    const player = this.createPlayer(playerName);
+    this.state.players.push(player);
+    this.broadcast();
+    return player;
+  }
+
+  setReady(playerId: string, ready: boolean) {
+    const player = this.getPlayer(playerId);
+    if (!player) return { ok: false, error: 'Player not found', status: 404 };
+    if (this.state.status !== 'lobby') return { ok: false, error: 'Game is not in lobby', status: 409 };
+
+    player.ready = ready;
+    this.startIfReady();
+    this.broadcast();
+    return { ok: true };
+  }
+
+  movePlayer(playerId: string, input: MovementInput) {
+    const player = this.getPlayer(playerId);
+    if (!player) return { ok: false, error: 'Player not found', status: 404 };
+    if (this.state.status !== 'playing') return { ok: false, error: 'Game is not playing', status: 409 };
+
+    const movement = sanitizeUnitVector(input.dx, input.dy);
+    this.movements.set(playerId, movement);
+
+    if (typeof input.angle === 'number' && Number.isFinite(input.angle)) {
+      player.angle = normalizeAngle(input.angle);
+    } else if (movement.dx !== 0 || movement.dy !== 0) {
+      player.angle = normalizeAngle(Math.atan2(movement.dy, movement.dx));
+    }
+
+    return { ok: true };
+  }
+
+  shoot(playerId: string, angle: unknown) {
+    const player = this.getPlayer(playerId);
+    if (!player) return { ok: false, error: 'Player not found', status: 404 };
+    if (this.state.status !== 'playing') return { ok: false, error: 'Game is not playing', status: 409 };
+
+    const now = Date.now();
+    if (now - player.lastShotAt < SHOT_COOLDOWN_MS) {
+      return { ok: false, error: 'Shot is on cooldown', status: 429 };
+    }
+
+    const shotAngle = typeof angle === 'number' && Number.isFinite(angle) ? normalizeAngle(angle) : player.angle;
+    player.angle = shotAngle;
+    player.lastShotAt = now;
+
+    this.state.projectiles.push({
+      id: uuidv4(),
+      ownerId: player.id,
+      x: player.x + Math.cos(shotAngle) * (PLAYER_RADIUS + PROJECTILE_RADIUS + 1),
+      y: player.y + Math.sin(shotAngle) * (PLAYER_RADIUS + PROJECTILE_RADIUS + 1),
+      vx: Math.cos(shotAngle) * PROJECTILE_SPEED,
+      vy: Math.sin(shotAngle) * PROJECTILE_SPEED,
+      createdAt: now,
+    });
+
+    this.broadcast();
+    return { ok: true };
+  }
+
+  leave(playerId: string) {
+    const player = this.getPlayer(playerId);
+    if (!player) return { ok: false, error: 'Player not found', status: 404 };
+
+    this.movements.delete(playerId);
+    this.state.projectiles = this.state.projectiles.filter((projectile) => projectile.ownerId !== playerId);
+
+    if (this.state.status === 'lobby') {
+      this.state.players = this.state.players.filter((candidate) => candidate.id !== playerId);
+    } else if (this.state.status === 'playing') {
+      player.alive = false;
+      player.ready = false;
+      const activePlayers = this.state.players.filter((candidate) => candidate.alive && candidate.id !== playerId);
+      if (activePlayers.length === 1) {
+        this.state.status = 'finished';
+        this.state.winnerId = activePlayers[0].id;
+        this.stop();
+      }
+    }
+
+    if (this.state.players.length === 0) {
+      this.stop();
+    }
+
+    this.broadcast();
+    return { ok: true };
+  }
+
+  getSummary() {
+    return {
+      matchId: this.state.matchId,
+      status: this.state.status,
+      players: this.state.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        hits: player.hits,
+        ready: player.ready,
+        alive: player.alive,
+      })),
+      winnerId: this.state.winnerId,
+    };
+  }
+
+  private startIfReady() {
+    if (
+      this.state.players.length >= MIN_PLAYERS &&
+      this.state.players.length <= MAX_PLAYERS &&
+      this.state.players.every((player) => player.ready)
+    ) {
+      this.start();
+    }
+  }
+
+  private start() {
     if (this.interval) return;
     this.state.status = 'playing';
     this.lastUpdateAt = Date.now();
-    this.interval = setInterval(() => this.update(), 16); // ~60 FPS
+    this.interval = setInterval(() => this.update(), FRAME_MS);
   }
 
-  stop() {
+  private stop() {
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
     }
   }
 
-  leave(playerId: 1 | 2) {
-    if (this.state.status === 'finished') return;
-    this.state.status = 'finished';
-    this.state.winner = playerId === 1 ? 2 : 1;
-    this.stop();
-    this.broadcast();
-  }
-
-  movePaddle(playerId: 1 | 2, direction: 'up' | 'down') {
-    const key = playerId === 1 ? 'y1' : 'y2';
-    const now = Date.now();
-    const timeSinceLastMove = now - this.lastPaddleMoveAt[playerId];
-    const isAccelerating = timeSinceLastMove <= PADDLE_ACCELERATION_WINDOW_MS;
-    this.paddleMoveStreaks[playerId] = isAccelerating ? this.paddleMoveStreaks[playerId] + 1 : 0;
-    this.lastPaddleMoveAt[playerId] = now;
-
-    const acceleration = Math.min(
-      MAX_PADDLE_ACCELERATION,
-      1 + this.paddleMoveStreaks[playerId] * PADDLE_ACCELERATION_STEP
-    );
-    const distance = PADDLE_SPEED * acceleration;
-    const delta = direction === 'up' ? -distance : distance;
-    const maxY = CANVAS_HEIGHT - this.state.config.paddleHeight;
-
-    if (direction === 'up') {
-      this.state.paddles[key] = Math.max(0, this.state.paddles[key] + delta);
-    } else {
-      this.state.paddles[key] = Math.min(maxY, this.state.paddles[key] + delta);
-    }
-    this.lastPaddleMoves[playerId] = delta;
-  }
-
   private update() {
-    const { ball, paddles } = this.state;
+    if (this.state.status !== 'playing') return;
+
     const now = Date.now();
     const deltaMs = Math.min(now - this.lastUpdateAt, MAX_DELTA_MS);
     this.lastUpdateAt = now;
-    const step = deltaMs / FRAME_MS;
-    const paddleHeight = this.state.config.paddleHeight;
+    const deltaSeconds = deltaMs / 1000;
 
-    // Move ball
-    ball.x += ball.vx * step;
-    ball.y += ball.vy * step;
-
-    // Wall bounce (top/bottom)
-    if (ball.y <= 0) {
-      ball.y = 0;
-      ball.vy = Math.abs(ball.vy);
-    } else if (ball.y >= CANVAS_HEIGHT - BALL_SIZE) {
-      ball.y = CANVAS_HEIGHT - BALL_SIZE;
-      ball.vy = -Math.abs(ball.vy);
-    }
-
-    // Paddle collision (left)
-    if (
-      ball.x <= PADDLE_WIDTH &&
-      ball.y + BALL_SIZE >= paddles.y1 &&
-      ball.y <= paddles.y1 + paddleHeight &&
-      ball.vx < 0
-    ) {
-      ball.x = PADDLE_WIDTH;
-      this.handlePaddleHit(1);
-    }
-
-    // Paddle collision (right)
-    if (
-      ball.x >= CANVAS_WIDTH - PADDLE_WIDTH - BALL_SIZE &&
-      ball.y + BALL_SIZE >= paddles.y2 &&
-      ball.y <= paddles.y2 + paddleHeight &&
-      ball.vx > 0
-    ) {
-      ball.x = CANVAS_WIDTH - PADDLE_WIDTH - BALL_SIZE;
-      this.handlePaddleHit(2);
-    }
-
-    // Scoring
-    if (ball.x <= 0) {
-      this.state.scores.score2++;
-      this.resetBall();
-    } else if (ball.x >= CANVAS_WIDTH) {
-      this.state.scores.score1++;
-      this.resetBall();
-    }
-
-    // Check for winner
-    if (this.state.scores.score1 >= 10) {
-      this.state.status = 'finished';
-      this.state.winner = 1;
-      this.stop();
-    } else if (this.state.scores.score2 >= 10) {
-      this.state.status = 'finished';
-      this.state.winner = 2;
-      this.stop();
-    }
-
+    this.updatePlayers(deltaSeconds);
+    this.updateProjectiles(deltaSeconds, now);
     this.broadcast();
-    this.lastPaddleMoves[1] *= 0.7;
-    this.lastPaddleMoves[2] *= 0.7;
   }
 
-  private resetBall() {
-    this.resetRally();
-    const direction = Math.random() > 0.5 ? 1 : -1;
-    const verticalDirection = Math.random() > 0.5 ? 1 : -1;
-    this.state.ball = {
-      x: CANVAS_WIDTH / 2,
-      y: CANVAS_HEIGHT / 2,
-      vx: direction * BALL_SPEED,
-      vy: verticalDirection * BALL_SPEED * 0.6,
+  private updatePlayers(deltaSeconds: number) {
+    for (const player of this.state.players) {
+      if (!player.alive) continue;
+      const movement = this.movements.get(player.id) ?? { dx: 0, dy: 0 };
+      player.x = clamp(player.x + movement.dx * PLAYER_SPEED * deltaSeconds, BARRIER_SIZE + PLAYER_RADIUS, ARENA_WIDTH - BARRIER_SIZE - PLAYER_RADIUS);
+      player.y = clamp(player.y + movement.dy * PLAYER_SPEED * deltaSeconds, BARRIER_SIZE + PLAYER_RADIUS, ARENA_HEIGHT - BARRIER_SIZE - PLAYER_RADIUS);
+    }
+  }
+
+  private updateProjectiles(deltaSeconds: number, now: number) {
+    const nextProjectiles: ProjectileState[] = [];
+
+    for (const projectile of this.state.projectiles) {
+      projectile.x += projectile.vx * deltaSeconds;
+      projectile.y += projectile.vy * deltaSeconds;
+
+      const expired = now - projectile.createdAt > PROJECTILE_TTL_MS;
+      const outsideArena =
+        projectile.x < BARRIER_SIZE ||
+        projectile.x > ARENA_WIDTH - BARRIER_SIZE ||
+        projectile.y < BARRIER_SIZE ||
+        projectile.y > ARENA_HEIGHT - BARRIER_SIZE;
+
+      if (expired || outsideArena) continue;
+
+      const hitPlayer = this.state.players.find((player) => (
+        player.alive &&
+        player.id !== projectile.ownerId &&
+        distanceSquared(player, projectile) <= (PLAYER_RADIUS + PROJECTILE_RADIUS) ** 2
+      ));
+
+      if (hitPlayer) {
+        this.handleHit(projectile.ownerId, hitPlayer.id);
+        continue;
+      }
+
+      nextProjectiles.push(projectile);
+    }
+
+    this.state.projectiles = nextProjectiles;
+  }
+
+  private handleHit(shooterId: string, targetId: string) {
+    const shooter = this.getPlayer(shooterId);
+    const target = this.getPlayer(targetId);
+    if (!shooter || !target || this.state.status !== 'playing') return;
+
+    shooter.hits += 1;
+
+    if (shooter.hits >= WINNING_HITS) {
+      this.state.status = 'finished';
+      this.state.winnerId = shooter.id;
+      this.stop();
+      return;
+    }
+
+    this.respawnPlayer(target);
+  }
+
+  private respawnPlayer(player: PlayerState) {
+    const spawn = this.randomSpawn(player.id);
+    player.x = spawn.x;
+    player.y = spawn.y;
+    player.angle = Math.random() * Math.PI * 2;
+    player.alive = true;
+    player.respawnedAt = Date.now();
+    this.movements.set(player.id, { dx: 0, dy: 0 });
+  }
+
+  private createPlayer(name: string): PlayerState {
+    const spawn = this.randomSpawn();
+    return {
+      id: uuidv4(),
+      name,
+      x: spawn.x,
+      y: spawn.y,
+      angle: Math.random() * Math.PI * 2,
+      ready: false,
+      hits: 0,
+      alive: true,
+      lastShotAt: 0,
+      respawnedAt: Date.now(),
     };
   }
 
-  private handlePaddleHit(playerId: 1 | 2) {
-    const { ball, paddles } = this.state;
-    const paddleY = playerId === 1 ? paddles.y1 : paddles.y2;
-    const paddleCenter = paddleY + this.state.config.paddleHeight / 2;
-    const ballCenter = ball.y + BALL_SIZE / 2;
-    const normalizedHit = Math.max(-1, Math.min(1, (ballCenter - paddleCenter) / (this.state.config.paddleHeight / 2)));
-    const spin = Math.max(-1, Math.min(1, this.lastPaddleMoves[playerId] / PADDLE_SPEED)) * PADDLE_SPIN_FACTOR;
-    const angle = Math.max(-MAX_BOUNCE_ANGLE, Math.min(MAX_BOUNCE_ANGLE, normalizedHit * MAX_BOUNCE_ANGLE + spin));
+  private randomSpawn(excludePlayerId?: string) {
+    const minX = BARRIER_SIZE + PLAYER_RADIUS;
+    const maxX = ARENA_WIDTH - BARRIER_SIZE - PLAYER_RADIUS;
+    const minY = BARRIER_SIZE + PLAYER_RADIUS;
+    const maxY = ARENA_HEIGHT - BARRIER_SIZE - PLAYER_RADIUS;
 
-    this.state.config.rallyHits += 1;
-    this.updateRallyDifficulty();
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      const spawn = {
+        x: minX + Math.random() * (maxX - minX),
+        y: minY + Math.random() * (maxY - minY),
+      };
+      const overlaps = this.state?.players.some((player) => (
+        player.id !== excludePlayerId &&
+        player.alive &&
+        distanceSquared(player, spawn) < (PLAYER_RADIUS * 3) ** 2
+      ));
+      if (!overlaps) return spawn;
+    }
 
-    const direction = playerId === 1 ? 1 : -1;
-    ball.vx = direction * Math.cos(angle) * this.state.config.ballSpeed;
-    ball.vy = Math.sin(angle) * this.state.config.ballSpeed;
+    return {
+      x: minX + Math.random() * (maxX - minX),
+      y: minY + Math.random() * (maxY - minY),
+    };
   }
 
-  private updateRallyDifficulty() {
-    const progress = Math.min(this.state.config.rallyHits / RALLY_HITS_TO_MAX, 1);
-    this.state.config.ballSpeed = BALL_SPEED * BALL_SPEED_INCREASE_PER_HIT ** this.state.config.rallyHits;
-    this.state.config.paddleHeight = PADDLE_HEIGHT - (PADDLE_HEIGHT - MIN_PADDLE_HEIGHT) * progress;
-    this.state.paddles.y1 = Math.min(this.state.paddles.y1, CANVAS_HEIGHT - this.state.config.paddleHeight);
-    this.state.paddles.y2 = Math.min(this.state.paddles.y2, CANVAS_HEIGHT - this.state.config.paddleHeight);
-  }
-
-  private resetRally() {
-    this.state.config.rallyHits = 0;
-    this.state.config.ballSpeed = BALL_SPEED;
-    this.state.config.paddleHeight = PADDLE_HEIGHT;
-    this.lastPaddleMoves = { 1: 0, 2: 0 };
-    this.lastPaddleMoveAt = { 1: 0, 2: 0 };
-    this.paddleMoveStreaks = { 1: 0, 2: 0 };
+  private getPlayer(playerId: string) {
+    return this.state.players.find((player) => player.id === playerId);
   }
 
   private broadcast() {
@@ -260,53 +430,32 @@ export class GameInstance {
 
 class GameManager {
   private matches: Map<string, GameInstance> = new Map();
-  private players: Map<string, { matchId: string; playerId: 1 | 2 }> = new Map();
 
   getMatch(matchId: string) {
     return this.matches.get(matchId);
   }
 
   getRunningWatchableMatches() {
-    return Array.from(this.matches.entries())
-      .filter(([, match]) => (
-        match.state.status === 'playing' &&
-        match.hasClients() &&
-        Boolean(match.state.players.player1) &&
-        Boolean(match.state.players.player2)
-      ))
-      .map(([matchId, match]) => ({
-        matchId,
-        status: match.state.status,
-        players: {
-          player1: match.state.players.player1 as string,
-          player2: match.state.players.player2 as string,
-        },
-        scores: match.state.scores,
-      }));
+    return Array.from(this.matches.values())
+      .filter((match) => match.state.status === 'playing')
+      .map((match) => match.getSummary());
   }
 
   joinOrCreateMatch(playerName: string) {
-    // Look for a match with status 'waiting'
     for (const [matchId, match] of this.matches.entries()) {
-      if (match.state.status === 'waiting' && match.hasClients()) {
-        const playerId = 2;
-        match.state.players.player2 = playerName;
-        match.start();
-        return { matchId, playerId };
+      if (match.canJoin()) {
+        const player = match.addPlayer(playerName);
+        return { matchId, playerId: player.id };
       }
     }
 
-    // Create new match
     const matchId = uuidv4();
     const match = new GameInstance(matchId, playerName);
     this.matches.set(matchId, match);
-    return { matchId, playerId: 1 as const };
+    return { matchId, playerId: match.state.players[0].id };
   }
 }
 
-// Singleton instance
-// Note: In Next.js dev mode, this might be re-initialized. 
-// For production/STABLE singleton in Next.js:
 const globalForGame = global as unknown as { gameManager: GameManager };
 export const gameManager = globalForGame.gameManager || new GameManager();
 if (process.env.NODE_ENV !== 'production') globalForGame.gameManager = gameManager;

@@ -1,79 +1,107 @@
 'use client';
 
-import { useParams, useSearchParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
-import { usePongGame } from '@/hooks/usePongGame';
-import PongCanvas from '@/components/PongCanvas';
+import { useShooterGame } from '@/hooks/useShooterGame';
+import ShooterCanvas from '@/components/ShooterCanvas';
 
-function getPlayerName(gameState: NonNullable<ReturnType<typeof usePongGame>['gameState']>, playerId?: number) {
-  if (playerId === 1) return gameState.players?.player1 ?? 'Player 1';
-  if (playerId === 2) return gameState.players?.player2 ?? 'Player 2';
-  return 'Player';
+function getPlayerName(gameState: NonNullable<ReturnType<typeof useShooterGame>['gameState']>, playerId?: string | null) {
+  return gameState.players.find((player) => player.id === playerId)?.name ?? 'Player';
 }
 
 export default function MatchRoom() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const matchId = params.matchId as string;
-  const playerParam = Number(searchParams.get('playerId'));
-  const playerId = playerParam === 1 || playerParam === 2 ? playerParam : null;
-  const isWatching = searchParams.get('watch') === '1' || playerId === null;
-
-  const { gameState, movePaddle, leaveGame } = usePongGame(matchId);
   const router = useRouter();
+  const matchId = params.matchId as string;
+  const playerId = searchParams.get('playerId');
+  const isWatching = searchParams.get('watch') === '1' || !playerId;
+  const { gameState, setReady, movePlayer, shoot, leaveGame } = useShooterGame(matchId);
 
   useEffect(() => {
-    if (isWatching || playerId === null) return;
+    if (isWatching || !playerId) return;
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowUp' || e.key === 'w') {
-        movePaddle(playerId, 'up');
-      } else if (e.key === 'ArrowDown' || e.key === 's') {
-        movePaddle(playerId, 'down');
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const movement = {
+        dx: Number(event.key === 'ArrowRight' || event.key === 'd') - Number(event.key === 'ArrowLeft' || event.key === 'a'),
+        dy: Number(event.key === 'ArrowDown' || event.key === 's') - Number(event.key === 'ArrowUp' || event.key === 'w'),
+      };
+
+      if (movement.dx !== 0 || movement.dy !== 0) {
+        movePlayer(playerId, movement.dx, movement.dy);
+      } else if (event.key === ' ') {
+        const player = gameState?.players.find((candidate) => candidate.id === playerId);
+        shoot(playerId, player?.angle);
+      }
+    };
+
+    const handleKeyUp = (event: KeyboardEvent) => {
+      if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'w', 'a', 's', 'd'].includes(event.key)) {
+        movePlayer(playerId, 0, 0);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isWatching, playerId, movePaddle]);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [gameState?.players, isWatching, movePlayer, playerId, shoot]);
 
   const handleLeave = async () => {
-    if (playerId === null) return;
+    if (!playerId) return;
     await leaveGame(playerId);
     router.push('/');
   };
 
-  const currentPlayerName = gameState && playerId !== null ? getPlayerName(gameState, playerId) : null;
-  const winnerName = gameState?.status === 'finished' ? getPlayerName(gameState, gameState.winner) : null;
+  const handleReady = async () => {
+    if (!playerId) return;
+    await setReady(playerId, true);
+  };
+
+  const winnerName = gameState?.winnerId ? getPlayerName(gameState, gameState.winnerId) : null;
+  const currentPlayer = gameState?.players.find((player) => player.id === playerId);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', backgroundColor: '#222', color: 'white', fontFamily: 'sans-serif' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minHeight: '100vh', backgroundColor: '#0f172a', color: 'white', fontFamily: 'sans-serif', padding: '24px' }}>
       <h1>Match: {matchId}</h1>
-      <h3>{isWatching ? 'Watching Match' : `You are ${currentPlayerName ?? `Player ${playerId}`}`}</h3>
+      <h3>{isWatching ? 'Watching Match' : `You are ${currentPlayer?.name ?? 'joining...'}`}</h3>
       {gameState ? (
         <>
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '10px', fontSize: '18px' }}>
-            <span>{getPlayerName(gameState, 1)}: {gameState.scores.score1}</span>
-            <span>{getPlayerName(gameState, 2)}: {gameState.scores.score2}</span>
+          <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '12px', marginBottom: '10px', fontSize: '16px' }}>
+            {gameState.players.map((player) => (
+              <span key={player.id}>
+                {player.name}: {player.hits} hits {player.ready ? '(ready)' : '(waiting)'}
+              </span>
+            ))}
           </div>
           <div style={{ marginBottom: '10px', fontSize: '20px', fontWeight: 'bold' }}>
-            {gameState.status === 'waiting' && 'Waiting for Player 2...'}
+            {gameState.status === 'lobby' && 'Lobby waiting for ready players'}
             {gameState.status === 'playing' && 'Game in Progress'}
             {gameState.status === 'finished' && `${winnerName} wins!`}
           </div>
-          <PongCanvas gameState={gameState} />
+          <ShooterCanvas gameState={gameState} />
+          {!isWatching && gameState.status === 'lobby' && !currentPlayer?.ready && (
+            <button
+              onClick={handleReady}
+              style={{ marginTop: '20px', padding: '10px 20px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            >
+              Ready
+            </button>
+          )}
           {!isWatching && gameState.status !== 'finished' && (
-            <button 
+            <button
               onClick={handleLeave}
-              style={{ marginTop: '20px', padding: '10px 20px', backgroundColor: '#f44336', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              style={{ marginTop: '12px', padding: '10px 20px', backgroundColor: '#dc2626', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
             >
               Leave Game
             </button>
           )}
           {(isWatching || gameState.status === 'finished') && (
-            <button 
+            <button
               onClick={() => router.push('/')}
-              style={{ marginTop: '20px', padding: '10px 20px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+              style={{ marginTop: '20px', padding: '10px 20px', backgroundColor: '#16a34a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
             >
               Back to Lobby
             </button>
@@ -82,7 +110,7 @@ export default function MatchRoom() {
       ) : (
         <p>Connecting to game stream...</p>
       )}
-      {!isWatching && <p style={{ marginTop: '20px' }}>Use Arrow Up/Down or W/S to move your paddle.</p>}
+      {!isWatching && <p style={{ marginTop: '20px' }}>Use WASD or arrow keys to move. Press Space to shoot.</p>}
     </div>
   );
 }

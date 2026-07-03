@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * @openapi
- * /api/match/{matchId}/move:
+ * /api/match/{matchId}/shoot:
  *   post:
- *     description: Move a player in the top-down arena.
+ *     description: Fire a projectile from the player in the requested angle.
  *     parameters:
  *       - in: path
  *         name: matchId
@@ -17,12 +17,16 @@ import { NextRequest, NextResponse } from 'next/server';
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/MoveRequest'
+ *             $ref: '#/components/schemas/ShootRequest'
  *     responses:
  *       200:
- *         description: Move accepted.
+ *         description: Shot accepted.
  *       404:
- *         description: Match not found.
+ *         description: Match or player not found.
+ *       409:
+ *         description: Match is not playing.
+ *       429:
+ *         description: Shot is on cooldown.
  */
 export async function POST(
   req: NextRequest,
@@ -31,9 +35,6 @@ export async function POST(
   const { matchId } = await params;
   const body = await req.json().catch(() => null);
   const playerId = typeof body?.playerId === 'string' ? body.playerId : '';
-  const dx = typeof body?.dx === 'number' ? body.dx : 0;
-  const dy = typeof body?.dy === 'number' ? body.dy : 0;
-  const angle = typeof body?.angle === 'number' ? body.angle : undefined;
 
   if (!playerId) {
     return NextResponse.json({ error: 'Player id is required' }, { status: 400 });
@@ -44,7 +45,7 @@ export async function POST(
     return NextResponse.json({ error: 'Match not found' }, { status: 404 });
   }
 
-  const result = match.movePlayer(playerId, { dx, dy, angle });
+  const result = match.shoot(playerId, body?.angle);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }

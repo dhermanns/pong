@@ -1,53 +1,23 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Top-Down Shooter Backend
 
-## Getting Started
+Next.js backend for a Brawl-Stars-style 2D shooter. The game state is kept in memory and exposed through REST actions plus an SSE state stream.
 
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-## API ansehen
-
-Die API-Dokumentation wird als Swagger UI bereitgestellt. Starte zuerst den
-Entwicklungsserver:
+## Development
 
 ```bash
 npm run dev
 ```
 
-Danach kann die API im Browser unter
-[http://localhost:3000/docs](http://localhost:3000/docs) betrachtet werden.
+Open `http://localhost:3000` for the small debug UI or `http://localhost:3000/docs` for Swagger UI.
 
-Die zugrunde liegende OpenAPI-Spezifikation ist außerdem als JSON unter
-[http://localhost:3000/api/docs/swagger.json](http://localhost:3000/api/docs/swagger.json)
-verfügbar. Dort sind die Endpunkte zum Beitreten, Verlassen, Bewegen und zum
-SSE-Stream eines Matches dokumentiert.
+## API
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `POST /api/match/join` with `{ "playerName": "Ada" }` joins an open lobby or creates a new one.
+- `POST /api/match/{matchId}/ready` with `{ "playerId": "...", "ready": true }` marks a player ready.
+- `POST /api/match/{matchId}/move` with `{ "playerId": "...", "dx": 1, "dy": 0, "angle": 0 }` sets movement input.
+- `POST /api/match/{matchId}/shoot` with `{ "playerId": "...", "angle": 0 }` fires a projectile.
+- `POST /api/match/{matchId}/leave` with `{ "playerId": "..." }` leaves the lobby or match.
+- `GET /api/match/{matchId}/stream` streams the full `GameState` as `text/event-stream`.
+- `GET /api/match/watch` lists running games that can be watched.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Lobbies support 2 to 8 players. A game starts when all players in the lobby are ready. The first player with 10 hits wins; hit targets respawn randomly inside the arena barrier.

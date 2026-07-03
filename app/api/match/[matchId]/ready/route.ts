@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * @openapi
- * /api/match/{matchId}/move:
+ * /api/match/{matchId}/ready:
  *   post:
- *     description: Move a player in the top-down arena.
+ *     description: Mark a lobby player as ready or not ready. The game starts when every player is ready.
  *     parameters:
  *       - in: path
  *         name: matchId
@@ -17,12 +17,14 @@ import { NextRequest, NextResponse } from 'next/server';
  *       content:
  *         application/json:
  *           schema:
- *             $ref: '#/components/schemas/MoveRequest'
+ *             $ref: '#/components/schemas/ReadyRequest'
  *     responses:
  *       200:
- *         description: Move accepted.
+ *         description: Ready state accepted.
  *       404:
- *         description: Match not found.
+ *         description: Match or player not found.
+ *       409:
+ *         description: Match is not in lobby state.
  */
 export async function POST(
   req: NextRequest,
@@ -31,9 +33,7 @@ export async function POST(
   const { matchId } = await params;
   const body = await req.json().catch(() => null);
   const playerId = typeof body?.playerId === 'string' ? body.playerId : '';
-  const dx = typeof body?.dx === 'number' ? body.dx : 0;
-  const dy = typeof body?.dy === 'number' ? body.dy : 0;
-  const angle = typeof body?.angle === 'number' ? body.angle : undefined;
+  const ready = typeof body?.ready === 'boolean' ? body.ready : true;
 
   if (!playerId) {
     return NextResponse.json({ error: 'Player id is required' }, { status: 400 });
@@ -44,7 +44,7 @@ export async function POST(
     return NextResponse.json({ error: 'Match not found' }, { status: 404 });
   }
 
-  const result = match.movePlayer(playerId, { dx, dy, angle });
+  const result = match.setReady(playerId, ready);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
