@@ -82,10 +82,11 @@ test('swagger documents the shooter API', async ({ request }) => {
   expect(spec.paths['/api/match/{matchId}/shoot']).toBeTruthy();
   expect(spec.components.schemas.GameState.properties.players.type).toBe('array');
   expect(spec.components.schemas.GameState.properties.projectiles.type).toBe('array');
+  expect(spec.components.schemas.GameState.properties.barriers.type).toBe('array');
 });
 
 test('engine moves players inside barriers, resolves hits, respawns targets, and finishes at 10 hits', async () => {
-  const match = new GameInstance('engine-test', 'Ada');
+  const match = new GameInstance('engine-test', 'Ada', { barriers: [] });
   const grace = match.addPlayer('Grace');
   const ada = match.state.players[0];
 
@@ -121,4 +122,45 @@ test('engine moves players inside barriers, resolves hits, respawns targets, and
   expect(match.shoot(ada.id, 0).ok).toBeTruthy();
   await expect.poll(() => match.state.status).toBe('finished');
   expect(match.state.winnerId).toBe(ada.id);
+});
+
+test('engine generates 10 random barriers for new matches', async () => {
+  const match = new GameInstance('barrier-generation-test', 'Ada');
+
+  expect(match.state.barriers).toHaveLength(10);
+  for (const barrier of match.state.barriers) {
+    expect(barrier.x).toBeGreaterThanOrEqual(match.state.config.barrierSize);
+    expect(barrier.y).toBeGreaterThanOrEqual(match.state.config.barrierSize);
+    expect(barrier.x + barrier.width).toBeLessThanOrEqual(match.state.config.width - match.state.config.barrierSize);
+    expect(barrier.y + barrier.height).toBeLessThanOrEqual(match.state.config.height - match.state.config.barrierSize);
+  }
+});
+
+test('engine blocks players and projectiles with barriers', async () => {
+  const match = new GameInstance('barrier-collision-test', 'Ada', {
+    barriers: [{ id: 'wall', x: 220, y: 150, width: 60, height: 120 }],
+  });
+  const grace = match.addPlayer('Grace');
+  const ada = match.state.players[0];
+
+  expect(match.setReady(ada.id, true).ok).toBeTruthy();
+  expect(match.setReady(grace.id, true).ok).toBeTruthy();
+  expect(match.state.status).toBe('playing');
+
+  ada.x = 180;
+  ada.y = 200;
+  expect(match.movePlayer(ada.id, { dx: 1, dy: 0 }).ok).toBeTruthy();
+  await expect.poll(() => ada.x).toBeLessThan(220 - match.state.config.playerRadius);
+
+  ada.x = 100;
+  ada.y = 200;
+  ada.hits = 0;
+  ada.lastShotAt = 0;
+  grace.x = 340;
+  grace.y = 200;
+
+  expect(match.shoot(ada.id, 0).ok).toBeTruthy();
+  await expect.poll(() => match.state.projectiles).toHaveLength(0);
+  expect(ada.hits).toBe(0);
+  expect(grace.x).toBe(340);
 });

@@ -16,6 +16,17 @@ const playerSchema = {
   },
 };
 
+const barrierSchema = {
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    x: { type: 'number' },
+    y: { type: 'number' },
+    width: { type: 'number' },
+    height: { type: 'number' },
+  },
+};
+
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -137,6 +148,10 @@ const options = {
                   createdAt: { type: 'number' },
                 },
               },
+            },
+            barriers: {
+              type: 'array',
+              items: barrierSchema,
             },
             winnerId: {
               type: 'string',

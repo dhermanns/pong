@@ -45,6 +45,14 @@ export default function ShooterCanvas({ gameState }: ShooterCanvasProps) {
     ctx.lineWidth = barrierSize;
     ctx.strokeRect(barrierSize / 2, barrierSize / 2, width - barrierSize, height - barrierSize);
 
+    for (const barrier of gameState.barriers) {
+      ctx.fillStyle = '#f97316';
+      ctx.fillRect(barrier.x, barrier.y, barrier.width, barrier.height);
+      ctx.strokeStyle = '#fed7aa';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(barrier.x + 1, barrier.y + 1, barrier.width - 2, barrier.height - 2);
+    }
+
     for (const projectile of gameState.projectiles) {
       ctx.fillStyle = '#f8fafc';
       ctx.beginPath();
