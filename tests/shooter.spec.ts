@@ -124,6 +124,34 @@ test('engine moves players inside barriers, resolves hits, respawns targets, and
   expect(match.state.winnerId).toBe(ada.id);
 });
 
+test('engine supports diagonal movement and shots', async () => {
+  const match = new GameInstance('diagonal-engine-test', 'Ada', { barriers: [] });
+  const grace = match.addPlayer('Grace');
+  const ada = match.state.players[0];
+
+  expect(match.setReady(ada.id, true).ok).toBeTruthy();
+  expect(match.setReady(grace.id, true).ok).toBeTruthy();
+  expect(match.state.status).toBe('playing');
+
+  ada.x = 200;
+  ada.y = 200;
+  expect(match.movePlayer(ada.id, { dx: 1, dy: 1 }).ok).toBeTruthy();
+  await expect.poll(() => ada.x).toBeGreaterThan(200);
+  expect(ada.y).toBeGreaterThan(200);
+  expect(ada.angle).toBeCloseTo(Math.PI / 4);
+
+  ada.x = 200;
+  ada.y = 200;
+  ada.hits = 0;
+  ada.lastShotAt = 0;
+  grace.x = 250;
+  grace.y = 250;
+
+  expect(match.shoot(ada.id, Math.PI / 4).ok).toBeTruthy();
+  await expect.poll(() => ada.hits).toBe(1);
+  expect(match.state.projectiles).toHaveLength(0);
+});
+
 test('engine generates 10 random barriers for new matches', async () => {
   const match = new GameInstance('barrier-generation-test', 'Ada');
 

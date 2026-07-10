@@ -1,12 +1,23 @@
 'use client';
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useShooterGame } from '@/hooks/useShooterGame';
 import ShooterCanvas from '@/components/ShooterCanvas';
 
+const MOVEMENT_KEYS = ['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'w', 'a', 's', 'd'];
+const SPACE_KEY = ' ';
+const SHOT_RETRY_MS = 50;
+
 function getPlayerName(gameState: NonNullable<ReturnType<typeof useShooterGame>['gameState']>, playerId?: string | null) {
   return gameState.players.find((player) => player.id === playerId)?.name ?? 'Player';
+}
+
+function getMovementFromKeys(keys: Set<string>) {
+  return {
+    dx: Number(keys.has('ArrowRight') || keys.has('d')) - Number(keys.has('ArrowLeft') || keys.has('a')),
+    dy: Number(keys.has('ArrowDown') || keys.has('s')) - Number(keys.has('ArrowUp') || keys.has('w')),
+  };
 }
 
 export default function MatchRoom() {
@@ -17,41 +28,119 @@ export default function MatchRoom() {
   const playerId = searchParams.get('playerId');
   const isWatching = searchParams.get('watch') === '1' || !playerId;
   const { gameState, setReady, movePlayer, shoot, leaveGame } = useShooterGame(matchId);
+  const pressedKeysRef = useRef(new Set<string>());
+  const lastMovementRef = useRef({ dx: 0, dy: 0 });
+  const latestGameStateRef = useRef(gameState);
+  const isShootingRef = useRef(false);
+  const lastShotSentAtRef = useRef(0);
+  const shootingIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    latestGameStateRef.current = gameState;
+  }, [gameState]);
 
   useEffect(() => {
     if (isWatching || !playerId) return;
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (gameState && !gameState.players.some((candidate) => candidate.id === playerId)) return;
+    const playerIsPresent = () => {
+      const latestGameState = latestGameStateRef.current;
+      return !latestGameState || latestGameState.players.some((candidate) => candidate.id === playerId);
+    };
 
-      const movement = {
-        dx: Number(event.key === 'ArrowRight' || event.key === 'd') - Number(event.key === 'ArrowLeft' || event.key === 'a'),
-        dy: Number(event.key === 'ArrowDown' || event.key === 's') - Number(event.key === 'ArrowUp' || event.key === 'w'),
-      };
+    const sendMovement = () => {
+      const movement = getMovementFromKeys(pressedKeysRef.current);
+      if (movement.dx === lastMovementRef.current.dx && movement.dy === lastMovementRef.current.dy) return;
 
+      lastMovementRef.current = movement;
+      const angle = movement.dx !== 0 || movement.dy !== 0 ? Math.atan2(movement.dy, movement.dx) : undefined;
+      movePlayer(playerId, movement.dx, movement.dy, angle);
+    };
+
+    const getShotAngle = () => {
+      const movement = getMovementFromKeys(pressedKeysRef.current);
       if (movement.dx !== 0 || movement.dy !== 0) {
-        movePlayer(playerId, movement.dx, movement.dy);
-      } else if (event.key === ' ') {
-        const player = gameState?.players.find((candidate) => candidate.id === playerId);
-        shoot(playerId, player?.angle);
+        return Math.atan2(movement.dy, movement.dx);
+      }
+
+      return latestGameStateRef.current?.players.find((candidate) => candidate.id === playerId)?.angle;
+    };
+
+    const fireShot = () => {
+      if (!playerIsPresent()) return;
+
+      const now = Date.now();
+      const cooldownMs = latestGameStateRef.current?.config.shotCooldownMs ?? 300;
+      if (now - lastShotSentAtRef.current < cooldownMs) return;
+
+      lastShotSentAtRef.current = now;
+      shoot(playerId, getShotAngle());
+    };
+
+    const startShooting = () => {
+      if (isShootingRef.current) return;
+
+      isShootingRef.current = true;
+      fireShot();
+      shootingIntervalRef.current = window.setInterval(fireShot, SHOT_RETRY_MS);
+    };
+
+    const stopShooting = () => {
+      isShootingRef.current = false;
+      if (shootingIntervalRef.current === null) return;
+
+      window.clearInterval(shootingIntervalRef.current);
+      shootingIntervalRef.current = null;
+    };
+
+    const stopMovement = () => {
+      pressedKeysRef.current.clear();
+      if (lastMovementRef.current.dx === 0 && lastMovementRef.current.dy === 0) return;
+
+      lastMovementRef.current = { dx: 0, dy: 0 };
+      movePlayer(playerId, 0, 0);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!playerIsPresent()) return;
+
+      if (MOVEMENT_KEYS.includes(event.key)) {
+        event.preventDefault();
+        pressedKeysRef.current.add(event.key);
+        sendMovement();
+      } else if (event.key === SPACE_KEY) {
+        event.preventDefault();
+        startShooting();
       }
     };
 
     const handleKeyUp = (event: KeyboardEvent) => {
-      if (gameState && !gameState.players.some((candidate) => candidate.id === playerId)) return;
+      if (!playerIsPresent()) return;
 
-      if (['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'w', 'a', 's', 'd'].includes(event.key)) {
-        movePlayer(playerId, 0, 0);
+      if (MOVEMENT_KEYS.includes(event.key)) {
+        event.preventDefault();
+        pressedKeysRef.current.delete(event.key);
+        sendMovement();
+      } else if (event.key === SPACE_KEY) {
+        event.preventDefault();
+        stopShooting();
       }
+    };
+
+    const stopInput = () => {
+      stopShooting();
+      stopMovement();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', stopInput);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', stopInput);
+      stopInput();
     };
-  }, [gameState, isWatching, movePlayer, playerId, shoot]);
+  }, [isWatching, movePlayer, playerId, shoot]);
 
   const handleLeave = async () => {
     if (!playerId) return;
@@ -115,7 +204,7 @@ export default function MatchRoom() {
       ) : (
         <p>Connecting to game stream...</p>
       )}
-      {!isWatching && <p style={{ marginTop: '20px' }}>Use WASD or arrow keys to move. Press Space to shoot.</p>}
+      {!isWatching && <p style={{ marginTop: '20px' }}>Use WASD or arrow keys to move, including diagonals. Hold Space to shoot while moving.</p>}
     </div>
   );
 }
